@@ -1,0 +1,2413 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>SatukasSatukas — Financial Dashboard</title>
+    <meta name="theme-color" content="#f7fafc" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- On Apps Script, manifest is served via doGet param -->
+    <link rel="manifest" href="?manifest=1" />
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Menonaktifkan peringatan CDN dari Tailwind
+        tailwind.config = {
+            important: true,
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet">
+    <!-- Vue 3 (Production Build) -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Google Charts Loader -->
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script>
+        // Preload corechart + sankey + treemap once so components can draw immediately
+        if (window.google && google.charts) {
+            google.charts.load('current', { packages: ['corechart', 'sankey', 'treemap'] });
+        } else {
+            window.addEventListener('load', () => {
+                if (window.google && google.charts) google.charts.load('current', { packages: ['corechart', 'sankey', 'treemap'] });
+            });
+        }
+    </script>
+
+    <style>
+        :root{
+            --card-bg: #ffffff;
+            --page-bg: #f7fafc;
+            --muted: #4a5568;
+            --accent: linear-gradient(90deg,#06b6d4,#3b82f6);
+        }
+        body{
+            font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
+            background: var(--page-bg);
+            color: var(--muted);
+            -webkit-font-smoothing:antialiased;
+            -moz-osx-font-smoothing:grayscale;
+            transition: background .25s ease, color .25s ease;
+        }
+        .header-logo { font-family: 'Plus Jakarta Sans', sans-serif; letter-spacing: -0.5px; }
+        .glass {
+            backdrop-filter: blur(6px);
+            background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.45));
+        }
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 6px 18px rgba(12,18,30,0.06);
+            transition: transform .12s ease, box-shadow .12s ease;
+        }
+        .card:hover { transform: translateY(-6px); box-shadow: 0 14px 30px rgba(12,18,30,0.09); }
+        .kpi { border-left: 4px solid transparent; }
+        .kpi.income { border-color: #10b981; }
+        .kpi.expense { border-color: #ef4444; }
+        .kpi.net { border-color: #3b82f6; }
+        .kpi.saving { border-color: #a78bfa; }
+        /* (Opsional) Bisa tambah style khusus jika ingin beda:
+        .kpi.networth { border-color:#2563eb; }
+        */
+        .small-muted { font-size: .85rem; color: #6b7280; }
+        .skeleton { background: linear-gradient(90deg,#eef2ff 25%, #f8fafc 50%, #eef2ff 75%); background-size: 200% 100%; animation: loading 1.2s linear infinite; border-radius: 8px; }
+        @keyframes loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        
+        .header-control {
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            background-color: rgba(255, 255, 255, 0.6);
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #1e293b;
+            transition: background-color 0.2s ease;
+            border: 1px solid #cbd5e1; /* make it look clickable */
+            box-shadow: 0 1px 0 rgba(15,23,42,0.04);
+        }
+        .header-control:hover {
+             background-color: rgba(255, 255, 255, 0.85);
+             border-color: #94a3b8;
+        }
+        .header-control.icon-btn {
+            padding: 0.5rem;
+        }
+        .header-control:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+        .header-control.active { border-color: #0ea5e9; color: #0c4a6e; background-color: #ffffff; }
+        /* Quick filter chips */
+        .chip { display:inline-flex; align-items:center; padding: .25rem .6rem; border:1px solid #cbd5e1; border-radius:9999px; background:#fff; color:#334155; font-weight:600; font-size:.75rem; }
+        .chip:hover { background:#f8fafc; border-color:#94a3b8; }
+        .chip:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+        .chip.active { background:#e0f2fe; border-color:#38bdf8; color:#075985; }
+        /* Pill untuk perbandingan KPI */
+        .kpi-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 6px;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
+            color: #fff;
+            border-radius: 9999px;
+            margin: 0 6px;
+        }
+        .kpi-pill.good { background-color: #10b981; }
+        .kpi-pill.bad { background-color: #ef4444; }
+        /* Donut progress ring */
+        .progress-ring { --size: 40px; --track:#e5e7eb; --fill:#10b981; position:relative; width:var(--size); height:var(--size); border-radius:50%; background:conic-gradient(var(--fill) calc(var(--value)*1%), var(--track) 0); }
+        .progress-ring::after { content:""; position:absolute; inset:4px; background:#fff; border-radius:50%; }
+        .progress-ring > span { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:.7rem; font-weight:700; color:#334155; }
+        /* Expanding search */
+        .search-wrap { width: 38px; transition: width .25s ease; overflow: hidden; cursor: text; }
+        .search-wrap.expanded { width: 320px; }
+        .search-input { width: 0; transition: width .25s ease; }
+        .search-wrap.expanded .search-input { width: 260px; }
+
+        /* ===== Normalize Financial Insights typography & spacing ===== */
+        .financial-insights .section { font-size: 0.95rem; color: #374151; }
+        .financial-insights .section .title { font-weight: 600; font-size: 0.95rem; color: #1f2937; margin-bottom: 0.35rem; }
+        .financial-insights .section .content { font-size: 0.95rem; line-height: 1.4; color: #374151; }
+        .financial-insights .section .meta { font-size: 0.85rem; color: #6b7280; }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen">
+        <dashboard-app></dashboard-app>
+    </div>
+
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+    // --- Helpers ---
+    function formatCurrency(amount) {
+        if (isNaN(amount) || amount === null) return 'IDR 0';
+        return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
+    }
+    function formatPercentage(value) {
+        if (isNaN(value) || value === null) return '0%';
+        return `${value.toFixed(1)}%`;
+    }
+    function formatCurrencyCompact(amount) {
+        if (isNaN(amount) || amount === null) return 'IDR 0';
+        try {
+            const compact = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(amount);
+            // Ensure we keep the Rp prefix for clarity
+            return `Rp ${compact}`;
+        } catch (e) {
+            // Fallback manual compacting
+            const abs = Math.abs(amount);
+            let value = amount;
+            let suffix = '';
+            if (abs >= 1_000_000_000_000) { value = amount / 1_000_000_000_000; suffix = ' T'; }
+            else if (abs >= 1_000_000_000) { value = amount / 1_000_000_000; suffix = ' M'; }
+            else if (abs >= 1_000_000) { value = amount / 1_000_000; suffix = ' jt'; }
+            else if (abs >= 1_000) { value = amount / 1_000; suffix = ' rb'; }
+            return `Rp ${value.toFixed(1).replace(/\.0$/, '')}${suffix}`;
+        }
+    }
+    function formatPeriodLabel(label) {
+        if (!label || !label.includes('-')) return label;
+        const [year, month] = label.split('-');
+        const date = new Date(year, month - 1);
+        return date.toLocaleString('en-US', { month: 'short' }) + ' ' + year;
+    }
+
+    // --- Child components ---
+
+    const WalletStatus = {
+        props: ['data'],
+        data() {
+            return {
+                filterType: '', // Filter by Type (Bank, E-Wallet, etc.)
+                filterOwner: '' // Filter by Owner (Bapak, Ibu, etc.)
+            };
+        },
+        template: `
+            <section class="card p-5 flex flex-col h-full">
+                <div class="flex items-start justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 flex items-center">
+                            Wallet Balances
+                            <span class="ml-2 bg-emerald-100 text-emerald-800 text-xs font-medium px-2.5 py-0.5 rounded-full">{{ formatCurrency(totalBalance) }}</span>
+                        </h3>
+                        <p class="small-muted mt-1">Total balance & breakdown</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <select v-model="filterType" class="border rounded-full px-2 py-1 text-xs bg-white">
+                            <option value="">All Types</option>
+                            <option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</option>
+                        </select>
+                        <select v-model="filterOwner" class="border rounded-full px-2 py-1 text-xs bg-white">
+                            <option value="">All Owners</option>
+                            <option v-for="o in ownerOptions" :key="o" :value="o">{{ o }}</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Total Per Filter (jika ada filter) -->
+                <div v-if="filterType || filterOwner" class="mt-1 mb-4 flex justify-between items-baseline border-b pb-2">
+                    <div class="text-sm text-gray-500">Filtered Total</div>
+                    <div class="text-lg font-bold text-gray-800">{{ formatCurrency(filteredTotal) }}</div>
+                </div>
+                
+                <!-- Data Tampilan -->
+                <div v-if="data && data.length" class="flex-grow overflow-y-auto max-h-64 pr-2">
+                    <div class="space-y-2">
+                        <div v-for="w in filteredData" :key="w.UniqueID" class="p-3 rounded-lg bg-gray-50 flex justify-between items-center">
+                            <div>
+                                <div class="font-semibold text-gray-700">{{ w.Wallet }}</div>
+                                <div class="small-muted text-xs">{{ w.Type }} <span v-if="w.Owner">• {{ w.Owner }}</span></div>
+                            </div>
+                            <div class="text-right">
+                                <div class="font-semibold" :class="w.Balance < 0 ? 'text-red-500' : 'text-emerald-600'">{{ formatCurrency(w.Balance) }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p v-else class="small-muted">No wallet data available.</p>
+            </section>
+        `,
+        computed: {
+            totalBalance() {
+                return (this.data || []).reduce((s, w) => s + (w.Balance || 0), 0);
+            },
+            typeOptions() {
+                const set = new Set();
+                (this.data || []).forEach(w => { if (w.Type) set.add(w.Type); });
+                return Array.from(set).sort();
+            },
+            ownerOptions() {
+                const set = new Set();
+                (this.data || []).forEach(w => { if (w.Owner) set.add(w.Owner); });
+                return Array.from(set).sort();
+            },
+            filteredData() {
+                if (!this.data) return [];
+                let items = this.data.filter(w => {
+                    if (this.filterType && w.Type !== this.filterType) return false;
+                    if (this.filterOwner && w.Owner !== this.filterOwner) return false;
+                    return true;
+                });
+                // Sort by balance descending
+                return items.sort((a, b) => (b.Balance || 0) - (a.Balance || 0));
+            },
+            filteredTotal() {
+                return this.filteredData.reduce((s, w) => s + (w.Balance || 0), 0);
+            }
+        },
+        methods: { formatCurrency }
+    };
+
+    const GoalsStatus = {
+        props: ['data'],
+        template: `
+            <section class="card p-5 flex flex-col h-full">
+                <div class="flex items-start justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">Goals Status</h3>
+                        <p class="small-muted mt-1">Progress vs expected pacing</p>
+                    </div>
+                    <div class="text-sm small-muted">🎯</div>
+                </div>
+                <div v-if="data && data.length" class="flex-grow overflow-y-auto max-h-64 pr-2">
+                    <div class="space-y-3">
+                        <div v-for="g in data" :key="g.UniqueID" class="p-3 rounded-lg bg-gray-50">
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="min-w-0">
+                                    <div class="font-semibold text-gray-800 truncate">{{ g.GoalName }}</div>
+                                    <div class="mt-1 flex items-center gap-2 text-xs text-gray-500">
+                                        <span v-if="g.GapPct !== undefined" class="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 font-semibold tracking-tight" :title="gapTooltip(g)">Gap {{ gapLabel(g) }}</span>
+                                        <span v-if="g.RiskScore !== undefined" class="inline-flex items-center px-1.5 py-0.5 rounded font-semibold tracking-tight" :class="riskClass(g.RiskScore)" :title="riskTooltip(g)">Risk {{ g.RiskScore }}</span>
+                                        <span v-if="g.Deadline" class="truncate">• {{ g.Deadline }}</span>
+                                    </div>
+                                </div>
+                                <div class="text-right leading-tight">
+                                    <div class="text-sm font-semibold text-gray-800" :title="remainingTooltip(g)">{{ formatCurrency(g.RemainingAmount) }}</div>
+                                    <div class="text-[10px] text-slate-500 mt-1" v-if="g.ProjectedFinish">ETA: {{ g.ProjectedFinish }}</div>
+                                </div>
+                            </div>
+                            <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden" :title="barTooltip(g)">
+                                <div :style="{ width: Math.min(g.ProgressPercentage,100)+'%' }" class="h-full bg-gradient-to-r from-emerald-400 to-sky-500"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p v-else class="small-muted">No goals data available.</p>
+            </section>
+        `,
+        methods: {
+            formatCurrency, formatPercentage,
+            statusClass(s){
+                switch(s){
+                    case 'Overfunded': return 'bg-emerald-100 text-emerald-700 border border-emerald-200';
+                    case 'Completed': return 'bg-emerald-200 text-emerald-800';
+                    case 'Ahead': return 'bg-sky-100 text-sky-700';
+                    case 'On Track': return 'bg-green-100 text-green-700';
+                    case 'Slightly Behind': return 'bg-amber-100 text-amber-700';
+                    case 'At Risk': return 'bg-orange-100 text-orange-700';
+                    case 'Off Track': return 'bg-red-100 text-red-600';
+                    case 'No Activity': return 'bg-slate-100 text-slate-600';
+                    case 'Overdue': return 'bg-rose-100 text-rose-700';
+                    case 'Failed': return 'bg-red-200 text-red-700';
+                    default: return 'bg-slate-100 text-slate-600';
+                }
+            },
+            statusTooltip(g){
+                return 'Ringkasan posisi goal dibanding waktu yang sudah berjalan.';
+            },
+            gapLabel(g){
+                // Normalisasi tampilan gap: jika belum ada progress sama sekali tampilkan 100%
+                if ((g.ProgressPercentage === 0 || g.Collected === 0) && g.TotalNeeded > 0) return '100%';
+                // Jika ada GapPct gunakan absolut (hilangkan tanda minus untuk user-facing)
+                const v = Math.abs(Number(g.GapPct||0));
+                return v.toString().replace(/\.0$/,'') + '%';
+            },
+            gapTooltip(g){
+                const hasProgress = g.ProgressPercentage > 0;
+                if (!hasProgress) {
+                    return 'Belum mulai. Seluruh target masih 100% tersisa.';
+                }
+                const raw = Number(g.GapPct||0);
+                const ahead = raw > 0;
+                return (ahead ? 'Lebih cepat ' : 'Tertinggal ') + Math.abs(raw) + '% dibanding ritme rata-rata. Target seharusnya sekarang: ' + this.formatCurrency(g.TargetCumulative) + ', realisasi: ' + this.formatCurrency(g.Collected) + '.';
+            },
+            riskClass(score){
+                if (score >= 70) return 'bg-red-100 text-red-600';
+                if (score >= 50) return 'bg-orange-100 text-orange-700';
+                if (score >= 30) return 'bg-amber-100 text-amber-700';
+                return 'bg-emerald-100 text-emerald-700';
+            },
+            riskTooltip(g){
+                const paceNeed = this.formatCurrency(g.PaceNeededPerDay || 0);
+                const paceActual = this.formatCurrency(g.ActualPacePerDay || 0);
+                return 'Skor risiko (0 aman – 100 tinggi). Butuh per hari: ' + paceNeed + ' • Rata-rata masuk: ' + paceActual + '.';
+            },
+            remainingTooltip(g){
+                return 'Butuh lagi ' + this.formatCurrency(g.RemainingAmount) + ' dari target ' + this.formatCurrency(g.TotalNeeded) + '.';
+            },
+            barTooltip(g){
+                return 'Status ' + g.Status + ' • Progress ' + (g.ProgressPercentage||0) + '% (target: ' + this.formatCurrency(g.TotalNeeded) + ').';
+            }
+        }
+    };
+
+    const BudgetStatus = {
+        props: ['data'],
+        template: `
+            <section class="card p-5 flex flex-col h-full">
+                <div class="flex items-start justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">Budget Status</h3>
+                        <p class="small-muted mt-1">Usage & remaining budgets</p>
+                    </div>
+                    <div class="text-sm small-muted">💰</div>
+                </div>
+                <div v-if="groupedBudgets" class="flex-grow overflow-y-auto max-h-64 pr-2">
+                    <div class="space-y-3">
+                        <div v-for="(group, categoryName) in groupedBudgets" :key="categoryName" class="p-3 rounded-lg bg-gray-50">
+                            <!-- Category Total Row -->
+                            <div>
+                                <div class="flex justify-between items-center mb-2">
+                                    <div>
+                                        <div class="font-bold text-gray-700">{{ group.total.Category }}</div>
+                                        <div class="small-muted text-xs">Budget: {{ formatCurrency(group.total.BudgetAmount) }}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="font-bold" :class="group.total.UsagePercentage > 100 ? 'text-red-500' : (group.total.UsagePercentage >= 80 ? 'text-yellow-600' : 'text-emerald-600')">{{ formatPercentage(group.total.UsagePercentage) }}</div>
+                                        <div class="small-muted text-xs">Remaining {{ formatCurrency(group.total.RemainingBudget) }}</div>
+                                    </div>
+                                </div>
+                                <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                    <div :style="{width: Math.min(group.total.UsagePercentage,100)+'%'}" :class="['h-full', group.total.UsagePercentage>100 ? 'bg-red-500' : (group.total.UsagePercentage>=80 ? 'bg-yellow-500' : 'bg-emerald-500') ]"></div>
+                                </div>
+                            </div>
+                            <!-- Subcategory Rows -->
+                            <div v-if="group.subcategories.length > 0" class="space-y-2 mt-3 pt-3 border-t border-gray-200">
+                                <div v-for="b in group.subcategories" :key="b.UniqueID" class="p-2 rounded-lg bg-gray-50">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <div>
+                                            <div class="font-semibold text-gray-700">{{ b.Subcategory }}</div>
+                                            <div class="small-muted text-xs">Budget: {{ formatCurrency(b.BudgetAmount) }}</div>
+                                        </div>
+                                        <div class="text-right">
+                                            <div class="font-bold text-sm" :class="b.UsagePercentage > 100 ? 'text-red-500' : (b.UsagePercentage >= 80 ? 'text-yellow-600' : 'text-emerald-600')">{{ formatPercentage(b.UsagePercentage) }}</div>
+                                            <div class="small-muted text-xs">Rem. {{ formatCurrency(b.RemainingBudget) }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                        <div :style="{width: Math.min(b.UsagePercentage,100)+'%'}" :class="['h-full', b.UsagePercentage>100 ? 'bg-red-500' : (b.UsagePercentage>=80 ? 'bg-yellow-500' : 'bg-emerald-500') ]"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p v-else class="small-muted">No budget data available.</p>
+            </section>
+        `,
+        methods: { formatCurrency, formatPercentage },
+        computed: {
+            groupedBudgets() {
+                if (!this.data || this.data.length === 0) return null;
+                const groups = {};
+                this.data.forEach(item => {
+                    if (!groups[item.Category]) {
+                        groups[item.Category] = { total: null, subcategories: [] };
+                    }
+                    if (item.Subcategory === 'All') {
+                        groups[item.Category].total = item;
+                    } else {
+                        groups[item.Category].subcategories.push(item);
+                    }
+                });
+                return groups;
+            }
+        }
+    };
+
+    const LiabilitiesUpcoming = {
+        props: ['data'],
+        template: `
+            <section class="card p-5 flex flex-col h-full">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 flex items-center">
+                            Liabilities & Upcoming
+                            <span v-if="filteredTotal > 0" class="ml-2 bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full">{{ formatCurrency(filteredTotal) }}</span>
+                        </h3>
+                        <p class="small-muted mt-1">Next due items</p>
+                    </div>
+                    <div class="text-sm small-muted">🗓️</div>
+                </div>
+                <!-- Inline filters -->
+                <div class="flex flex-wrap items-center gap-2 mb-3">
+                    <div class="flex items-center gap-1">
+                        <button class="chip" :class="{active: typeFilter==='all'}" @click="typeFilter='all'">All</button>
+                        <button class="chip" :class="{active: typeFilter==='upcoming'}" @click="typeFilter='upcoming'">Upcoming</button>
+                        <button class="chip" :class="{active: typeFilter==='liabilities'}" @click="typeFilter='liabilities'">Liabilities</button>
+                    </div>
+                    <div class="flex items-center gap-1" v-if="typeFilter!=='liabilities'">
+                        <span class="text-xs text-gray-500">Due In:</span>
+                        <button class="chip" :class="{active: horizonDays===7}" @click="horizonDays=7">7d</button>
+                        <button class="chip" :class="{active: horizonDays===30}" @click="horizonDays=30">30d</button>
+                        <button class="chip" :class="{active: horizonDays===90}" @click="horizonDays=90">90d</button>
+                        <button class="chip" :class="{active: horizonDays===0}" @click="horizonDays=0">All</button>
+                    </div>
+                    <select v-model="walletFilter" class="border rounded-full px-2 py-1 text-xs bg-white">
+                        <option value="">All Wallets</option>
+                        <option v-for="w in walletOptions" :key="w" :value="w">{{ w }}</option>
+                    </select>
+                    <input v-model="query" class="border rounded-full px-3 py-1 text-xs" placeholder="Search..." />
+                </div>
+                <div v-if="filteredItems && filteredItems.length" class="flex-grow overflow-y-auto max-h-64 pr-2">
+                    <div class="space-y-2">
+                        <div v-for="it in filteredItems" :key="it.UniqueID" :class="['flex justify-between items-center p-3 rounded-lg', it.Type==='Upcoming' && it.isOverdue ? 'bg-red-50 border border-red-300' : 'bg-gray-50']">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div class="text-center flex-shrink-0 w-14">
+                                    <div class="text-sm font-bold rounded-md px-2 py-1 leading-none" :class="it.Type==='Upcoming' ? (it.isOverdue ? 'text-red-700 bg-red-100' : 'text-sky-700 bg-sky-100') : 'text-slate-600 bg-slate-100'">
+                                        {{ getDay(it) }}
+                                    </div>
+                                    <div class="text-[10px] text-gray-500 mt-1 uppercase tracking-wide">
+                                        {{ getMonth(it) }}
+                                    </div>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="font-medium text-gray-700 truncate" :title="it.Name">{{ it.Name }}</div>
+                                    <div class="small-muted text-[11px] mt-0.5 flex flex-wrap items-center gap-1">
+                                        <span v-if="it.Type==='Upcoming'">Due</span><span v-else>Date</span>: {{ it.DisplayDate || '-' }} • {{ it.Type }} • {{ it.Wallet || '—' }}
+                                        <span v-if="dueInLabel(it)" :class="['px-1.5 py-0.5 rounded text-[10px] font-semibold', dueInClass(it)]">{{ dueInLabel(it) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="font-semibold text-right pl-2 whitespace-nowrap" :class="it.Type==='Liabilities' ? 'text-red-500' : (it.isOverdue ? 'text-red-600' : 'text-sky-600')">{{ formatCurrency(it.Amount) }}</div>
+                        </div>
+                    </div>
+                </div>
+                <p v-else class="small-muted flex-grow flex items-center justify-center">No items match your filters.</p>
+            </section>
+        `,
+        data(){
+            return { typeFilter: 'all', horizonDays: 30, walletFilter: '', query: '' };
+        },
+        methods: { 
+            formatCurrency,
+            getDay(it){
+                const src = it.DisplayDate || it.DueDate || '';
+                if (!src) return '';
+                const parts = src.split(' ');
+                return parts[0] || '';
+            },
+            getMonth(it){
+                const src = it.DisplayDate || it.DueDate || '';
+                if (!src) return '';
+                const parts = src.split(' ');
+                return parts[1] || '';
+            },
+            parseDueDate(it){
+                if (it.RawDueDate) {
+                    const d = new Date(it.RawDueDate); if (!isNaN(d)) return d; }
+                const raw = it.DueDate || it.DisplayDate; if (!raw) return null;
+                // expect format 'd MMM yyyy'
+                const m = raw.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+                if (m){
+                    const day = parseInt(m[1],10); const monMap = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+                    const mi = monMap.indexOf(m[2].toLowerCase()); if (mi>=0) { const d = new Date(parseInt(m[3],10), mi, day); if(!isNaN(d)) return d; }
+                }
+                const d2 = new Date(raw); return isNaN(d2) ? null : d2;
+            },
+            dueInLabel(it){
+                // Only show if we have a due date (Upcoming always has; Liabilities now assumed)
+                const d = this.parseDueDate(it); if (!d) return '';
+                const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
+                const diffDays = Math.round((d - today)/86400000);
+                if (diffDays < 0) return 'Overdue';
+                if (diffDays === 0) return 'Today';
+                if (diffDays === 1) return '1d';
+                if (diffDays <= 30) return diffDays + 'd';
+                // beyond 30 days show month abbrev for clarity
+                return d.toLocaleDateString('en-GB',{ day:'numeric', month:'short'});
+            },
+            dueInClass(it){
+                const label = this.dueInLabel(it);
+                if (!label) return '';
+                if (label === 'Overdue') return 'bg-red-100 text-red-600';
+                if (label === 'Today') return 'bg-amber-100 text-amber-700';
+                return 'bg-sky-100 text-sky-700';
+            }
+        },
+        computed: {
+            walletOptions(){
+                if (!this.data) return [];
+                const set = new Set();
+                this.data.forEach(it => { const w = String(it.Wallet || '').trim(); if (w) set.add(w); });
+                return Array.from(set).sort();
+            },
+            filteredItems(){
+                if (!this.data) return [];
+                const items = this.data.slice();
+                // Frontend fallback: pastikan Liabilities punya RawDueDate (kalau backend belum isi)
+                const endPeriod = new Date(); // asumsi current month ending default
+                endPeriod.setMonth(endPeriod.getMonth()+1, 0); endPeriod.setHours(0,0,0,0);
+                items.forEach(it => {
+                    if (it.Type==='Liabilities' && !it.RawDueDate) {
+                        // Coba derive dari DisplayDate (tanggal transaksi) -> due akhir bulan tsb
+                        const dd = it.DisplayDate || '';
+                        let base = null;
+                        if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(dd)) {
+                            try { base = new Date(dd); } catch(e){}
+                        }
+                        if (!base || isNaN(base.getTime())) base = new Date();
+                        const due = new Date(base.getFullYear(), base.getMonth()+1, 0);
+                        due.setHours(0,0,0,0);
+                        const iso = due.toISOString().split('T')[0];
+                        it.RawDueDate = iso;
+                        if (!it.DueDate) it.DueDate = dd || iso;
+                        // Debug sekali
+                        if (!it.__logged) { console.debug('[LiabFallback] inject RawDueDate', it.Name, iso); it.__logged=true; }
+                    }
+                });
+                const now = new Date(); now.setHours(0,0,0,0);
+                const horizonCap = this.horizonDays > 0 ? new Date(now.getTime() + this.horizonDays*86400000) : null;
+                const q = (this.query||'').toLowerCase();
+                return items.filter(it => {
+                    if (this.typeFilter === 'upcoming' && it.Type !== 'Upcoming') return false;
+                    if (this.typeFilter === 'liabilities' && it.Type !== 'Liabilities') return false;
+                    if (this.walletFilter && String(it.Wallet||'') !== this.walletFilter) return false;
+                    if (q) { const hay = `${it.Name||''} ${it.Wallet||''} ${it.Type||''}`.toLowerCase(); if (!hay.includes(q)) return false; }
+                    if (this.horizonDays > 0 && it.Type === 'Upcoming') {
+                        // Backend sudah kirim RawDueDate (ISO) untuk Upcoming
+                        const raw = it.RawDueDate || it.DueDate || it.DisplayDate;
+                        if (!raw) return false;
+                        const dueDate = new Date(raw);
+                        if (isNaN(dueDate.getTime())) return false;
+                        if (dueDate < now) return false; // exclude overdue dari horizon forward
+                        if (horizonCap && dueDate > horizonCap) return false;
+                    }
+                    return true;
+                });
+            },
+            filteredTotal(){
+                return this.filteredItems.reduce((s,it)=> s + (Number(it.Amount)||0), 0);
+            }
+        }
+    };
+
+    const RatiosChart = {
+        props: ['data'],
+        template: `
+            <section class="card p-5 flex flex-col h-full">
+                <div class="flex items-start justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">Expense Distribution</h3>
+                        <p class="small-muted mt-1">Based on expense ratios</p>
+                    </div>
+                    <div class="text-sm small-muted">⚖️</div>
+                </div>
+                <div v-if="data && data.length > 0" class="flex-grow">
+                    <div class="relative w-full" style="height: 260px;">
+                        <div ref="chartdiv" class="w-full h-full"></div>
+                        <div ref="overlay" class="absolute pointer-events-none text-center">
+                            <div class="text-[11px] text-gray-500">Total Expense</div>
+                            <div class="font-bold text-gray-800 text-base md:text-lg tracking-tight">{{ formatCurrencyCompact(totalExpense) }}</div>
+                        </div>
+                    </div>
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
+                        <div v-for="(row, idx) in legendItems" :key="row.RatioType" class="flex items-center gap-2">
+                            <span class="inline-block w-3 h-3 rounded-full" :style="{ backgroundColor: colors[idx % colors.length] }"></span>
+                            <span class="text-gray-700">{{ row.RatioType }}</span>
+                            <span class="text-gray-500">{{ row.percent.toFixed(1) }}%</span>
+                        </div>
+                    </div>
+                </div>
+                <p v-else class="small-muted flex-grow flex items-center justify-center">Not enough data to draw the chart.</p>
+            </section>
+        `,
+        data(){
+            return { colors: ['#818cf8', '#f87171', '#fbbf24', '#34d399', '#60a5fa'] };
+        },
+        mounted() { this.drawChart(); window.addEventListener('resize', this.drawChart); },
+        beforeUnmount(){ window.removeEventListener('resize', this.drawChart); },
+        watch: { data() { this.drawChart(); } },
+        computed: {
+            totalExpense() {
+                return (this.data || []).reduce((s, r) => s + (Number(r.TotalExpense)||0), 0);
+            },
+            legendItems(){
+                const total = this.totalExpense || 1;
+                return (this.data || []).map(r => ({ RatioType: r.RatioType, percent: ((Number(r.TotalExpense)||0)/total)*100 }));
+            }
+        },
+        methods: {
+            formatCurrency,
+            formatCurrencyCompact,
+            drawChart() {
+                if (!this.data || this.data.length === 0) return;
+                // Only use setOnLoadCallback if charts are not loaded yet, otherwise call draw directly
+                const draw = () => {
+                    const chartData = [['Ratio', 'Amount', {type:'string', role:'tooltip', p:{html:true}}]];
+                    (this.data || []).forEach(item => {
+                        const total = item.TotalExpense;
+                        const bySource = item.BySource || {};
+                        const percent = this.totalExpense > 0 ? (total/this.totalExpense*100) : 0;
+                        // Dinamis: tampilkan semua Source + percent
+                        let breakdown = '';
+                        const totalByRatio = total > 0 ? total : 1;
+                        Object.keys(bySource).forEach(src => {
+                            const val = bySource[src];
+                            const pct = (val/totalByRatio)*100;
+                            breakdown += `<span style="color:#64748b">${src}:</span> <b>${this.formatCurrency(val)}</b> <span style="color:#64748b">(${pct.toFixed(1)}%)</span><br>`;
+                        });
+                        const tip = `
+<div style="padding:8px 12px;min-width:180px">
+  <div style="font-weight:600;margin-bottom:2px">${item.RatioType}</div>
+  <div>Total: <b>${this.formatCurrency(total)}</b> <span style='color:#64748b;font-size:12px'>(${percent.toFixed(1)}%)</span></div>
+  <div style="margin-top:4px;font-size:12px">
+    ${breakdown}
+  </div>
+</div>`;
+                        chartData.push([item.RatioType, total, tip]);
+                    });
+                    const dataTable = google.visualization.arrayToDataTable(chartData);
+                    const options = {
+                        backgroundColor: 'transparent',
+                        pieHole: 0.6,
+                        legend: 'none',
+                        chartArea: { left: '10%', top: '5%', width: '80%', height: '80%' },
+                        pieSliceText: 'none',
+                        colors: this.colors,
+                        tooltip: { isHtml: true }
+                    };
+                    const chart = new google.visualization.PieChart(this.$refs.chartdiv);
+                    google.visualization.events.addListener(chart, 'ready', () => {
+                        try {
+                            const cli = chart.getChartLayoutInterface();
+                            const box = cli.getChartAreaBoundingBox();
+                            const cx = box.left + box.width / 2;
+                            const cy = box.top + box.height / 2;
+                            const overlay = this.$refs.overlay;
+                            if (overlay) {
+                                overlay.style.left = cx + 'px';
+                                overlay.style.top = cy + 'px';
+                                overlay.style.transform = 'translate(-50%, -50%)';
+                            }
+                        } catch(e) { /* ignore */ }
+                    });
+                    chart.draw(dataTable, options);
+                };
+                if (window.google && google.visualization && google.visualization.PieChart) {
+                    draw();
+                } else {
+                    google.charts.setOnLoadCallback(draw);
+                }
+            }
+        }
+    };
+
+    const SankeyChart = {
+        props: ['data'],
+        data(){ 
+            return {
+                topN: 5,                  // default Top 5
+                linkOptions: [5,7,10]
+            };
+        },
+        computed:{
+            // Aggregate PAYERS outside topN into single "Other (Payer)"
+            processedRows(){
+                if (!this.data || this.data.length === 0) return [];
+                const rawRows = this.data.filter(r => Array.isArray(r) && !isNaN(Number(r[2]))).map(r => [String(r[0]), String(r[1]), Number(r[2])]);
+                if (rawRows.length === 0) return [];
+
+                // total outgoing per payer
+                const totalsByPayer = {};
+                rawRows.forEach(r => {
+                    const payer = r[0];
+                    totalsByPayer[payer] = (totalsByPayer[payer] || 0) + (Number(r[2]) || 0);
+                });
+
+                const payersSorted = Object.keys(totalsByPayer).sort((a,b)=> totalsByPayer[b] - totalsByPayer[a]);
+                const topPayers = new Set(payersSorted.slice(0, this.topN));
+
+                const keptFlows = [];
+                const otherToBenef = {}; // beneficiary -> aggregated amount from all other payers
+
+                rawRows.forEach(r => {
+                    const payer = r[0], bene = r[1], val = Number(r[2])||0;
+                    if (topPayers.has(payer)) keptFlows.push({ from: payer, to: bene, value: val });
+                    else otherToBenef[bene] = (otherToBenef[bene]||0) + val;
+                });
+
+                const otherFlows = Object.keys(otherToBenef).map(b => ({ from: 'Other (Payer)', to: b, value: otherToBenef[b] }));
+                const merged = keptFlows.concat(otherFlows).filter(f => f.value > 0);
+                merged.sort((a,b)=> b.value - a.value);
+                return merged;
+            }
+        },
+        template: `
+            <section class="card p-5 flex flex-col h-full">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <h3 class="text-slate-800 font-semibold tracking-tight mb-1">Owner to Purpose Flow</h3>
+                        <p class="text-xs text-slate-500">Top payers kept; smaller payers aggregated as "Other (Payer)"</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <label class="text-xs text-slate-500">Top</label>
+                        <select v-model.number="topN" class="header-control text-sm">
+                            <option v-for="n in linkOptions" :key="n" :value="n">{{ n }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div ref="chartContainer" class="w-full" style="height:300px; min-height:300px;">
+                    <div ref="chartdiv" style="width:100%; height:100%;"></div>
+                </div>
+
+                <div v-if="processedRows.length===0" class="text-center text-xs text-slate-400 mt-4">No data available for selected filters.</div>
+            </section>
+        `,
+        mounted() {
+            // small deferred draw to ensure container sizing is stable (fix initial overflow)
+            this.$nextTick(()=> setTimeout(this.drawChart, 80));
+            window.addEventListener('resize', this.onResize);
+        },
+        beforeUnmount() { window.removeEventListener('resize', this.onResize); },
+        watch: { data(){ this.$nextTick(()=> setTimeout(this.drawChart, 80)); }, topN(){ this.$nextTick(this.drawChart); } },
+        methods: {
+            onResize(){ clearTimeout(this._rz); this._rz = setTimeout(() => this.drawChart(), 150); },
+            drawChart() {
+                if (!this.processedRows.length) { if (this.$refs.chartdiv) this.$refs.chartdiv.innerHTML = ''; return; }
+                google.charts.setOnLoadCallback(() => {
+                    try {
+                        const dt = new google.visualization.DataTable();
+                        dt.addColumn('string','From'); dt.addColumn('string','To'); dt.addColumn('number','Weight'); dt.addColumn({type:'string', role:'tooltip', p:{html:true}});
+                        const LEFT_PREFIX = 'Payer: '; const RIGHT_PREFIX = 'Beneficiary: ';
+                        const totalTo = {};
+                        this.processedRows.forEach(f => { const toLabel = RIGHT_PREFIX + String(f.to); totalTo[toLabel] = (totalTo[toLabel]||0) + f.value; });
+                        const rows = this.processedRows.map(f => {
+                            // Node label tetap pakai prefix
+                            const fromLabel = LEFT_PREFIX + String(f.from);
+                            const toLabel = RIGHT_PREFIX + String(f.to);
+                            const percent = totalTo[toLabel] ? (f.value / totalTo[toLabel]) * 100 : 0;
+                            // Tooltip hanya nama asli, tanpa prefix
+                            const tip = `<div style="padding:6px 8px;white-space:nowrap">
+  <div><strong>${f.from}</strong> → <strong>${f.to}</strong></div>
+  <div>Amount: ${formatCurrency(f.value)}</div>
+  <div>Share of '${f.to}': ${percent.toFixed(1)}%</div>
+</div>`;
+                            return [fromLabel, toLabel, f.value, tip];
+                        });
+                        dt.addRows(rows);
+                        const containerWidth = this.$refs.chartContainer ? this.$refs.chartContainer.clientWidth : undefined;
+                        const options = { width: containerWidth, height: this.$refs.chartContainer ? this.$refs.chartContainer.clientHeight : 300, backgroundColor:'transparent', tooltip:{ isHtml:true }, sankey:{ node:{ width:12, nodePadding:18, label:{ fontName:'Inter', fontSize:11, color:'#1e293b' }}, link:{ colorMode:'gradient' } } };
+                        const el = this.$refs.chartdiv; el.innerHTML = '';
+                        const chart = new google.visualization.Sankey(el);
+                        chart.draw(dt, options);
+                    } catch(e){ console.error('Sankey draw error', e); }
+                });
+            }
+        }
+    };
+
+    const ExpenseTreeMap = {
+        props: ['data'],
+        data() {
+            return {
+                viewMode: 'all', // 'all', 'category', 'subcategory'
+                sortMode: 'value', // 'value', 'change'
+                viewOptions: [
+                    { value: 'all', label: 'Category & Subcategory' },
+                    { value: 'category', label: 'By Category Only' },
+                    { value: 'subcategory', label: 'By Subcategory Only' }
+                ],
+                sortOptions: [
+                    { value: 'value', label: 'Highest Value' },
+                    { value: 'change', label: 'Highest Change (%)' }
+                ]
+            };
+        },
+        mounted() {
+            this.drawChart();
+            window.addEventListener('resize', this.onResize);
+        },
+        beforeUnmount() {
+            window.removeEventListener('resize', this.onResize);
+        },
+        watch: {
+            data() { this.drawChart(); },
+            viewMode() { this.drawChart(); },
+            sortMode() { this.drawChart(); }
+        },
+        methods: {
+            onResize() {
+                clearTimeout(this._rz);
+                this._rz = setTimeout(() => this.drawChart(), 150);
+            },
+            drawChart() {
+                const chartContainer = this.$refs.chartContainer;
+                if (!this.data || !this.data.total || !google.visualization || !chartContainer) {
+                    if (this.$refs.chartdiv) this.$refs.chartdiv.innerHTML = '';
+                    return;
+                }
+
+                // Defer drawing to ensure container is ready and has dimensions
+                this.$nextTick(() => {
+                    google.charts.setOnLoadCallback(() => {
+                        try {
+                            const total = this.data.total;
+                            const dataArray = [['ID', 'Parent', 'Value', 'Color']];
+                            dataArray.push(['Expenses', null, 0, 0]);
+
+                            // Helper to calculate percentage change for sorting
+                            const getChangePercent = (current, prev) => {
+                                if (prev === undefined || prev === null || prev === 0) {
+                                    return current > 0 ? Infinity : 0; // Treat new expenses as infinite change
+                                }
+                                return ((current - prev) / prev) * 100;
+                            };
+
+                            // Sorting function
+                            const sortData = (arr) => {
+                                if (!arr) return [];
+                                const sorted = [...arr]; // Create a shallow copy to avoid mutating prop
+                                if (this.sortMode === 'change') {
+                                    sorted.sort((a, b) => getChangePercent(b.value, b.prev_value) - getChangePercent(a.value, a.prev_value));
+                                } else { // 'value'
+                                    sorted.sort((a, b) => (b.value || 0) - (a.value || 0));
+                                }
+                                return sorted;
+                            };
+
+                            // Helper to create invisible unique suffix based on a string (category)
+                            const encodeZeroWidth = (str) => {
+                                const chars = ['\u200B','\u200C','\u200D'];
+                                let out = '';
+                                for (let i=0;i<str.length;i++) {
+                                    out += chars[str.charCodeAt(i) % 3];
+                                }
+                                return out;
+                            };
+
+                            if (this.viewMode === 'all') {
+                                const sortedHierarchical = sortData(this.data.hierarchical);
+                                sortedHierarchical.forEach(cat => {
+                                    const catValue = Number(cat.value) || 0;
+                                    dataArray.push([cat.name, 'Expenses', catValue, catValue]);
+                                    // Also sort children
+                                    const sortedChildren = sortData(cat.children);
+                                    sortedChildren.forEach(sub => {
+                                        const subValue = Number(sub.value) || 0;
+                                        // ID = visible sub name + separator + invisible encoded category for uniqueness
+                                        const internalId = `${sub.name}\u2063${encodeZeroWidth(cat.name)}`;
+                                        dataArray.push([internalId, cat.name, subValue, subValue]);
+                                    });
+                                });
+                            } else if (this.viewMode === 'category') {
+                                const sortedByCategory = sortData(this.data.byCategory);
+                                sortedByCategory.forEach(cat => {
+                                    const catValue = Number(cat.value) || 0;
+                                    dataArray.push([cat.name, 'Expenses', catValue, catValue]);
+                                });
+                            } else if (this.viewMode === 'subcategory') {
+                                const sortedBySubcategory = sortData(this.data.bySubcategory);
+                                sortedBySubcategory.forEach(sub => {
+                                    const subValue = Number(sub.value) || 0;
+                                    const internalId = `${sub.name}\u2063${encodeZeroWidth(sub.category)}`;
+                                    dataArray.push([internalId, 'Expenses', subValue, subValue]);
+                                });
+                            }
+
+                            if (dataArray.length <= 2) { // Root + 1 data point minimum
+                                if (this.$refs.chartdiv) this.$refs.chartdiv.innerHTML = '';
+                                return;
+                            }
+
+                            const dataTable = google.visualization.arrayToDataTable(dataArray);
+
+                            const options = {
+                                width: chartContainer.clientWidth,
+                                height: chartContainer.clientHeight,
+                                minColor: '#fef2f2',
+                                midColor: '#fca5a5',
+                                maxColor: '#ef4444',
+                                headerHeight: 15,
+                                fontColor: '#1e293b',
+                                fontFamily: 'Inter, system-ui, sans-serif',
+                                fontSize: 12,
+                                showScale: true,
+                                highlightOnMouseOver: true,
+                                maxPostDepth: 2,
+                                maxDepth: 2,
+                                generateTooltip: (row, size, value) => {
+                                    const id = dataTable.getValue(row, 0);
+                                    const parent = dataTable.getValue(row, 1);
+                                    const amount = dataTable.getValue(row, 2);
+                                    
+                                    // Find the original data point to get prev_value
+                                    let originalNode = null;
+                                    const displayName = id.includes('\u2063') ? id.split('\u2063')[0] : id;
+
+                                    // Helper to find node, now considers parent for subcategories
+                                    const findNode = (nodes, parentName = null) => {
+                                        for (const node of nodes) {
+                                            // For subcategories, we need to match both name and parent category
+                                            if (parentName && node.children) {
+                                                const foundChild = node.children.find(child => child.name === displayName && node.name === parentName);
+                                                if (foundChild) return foundChild;
+                                            }
+                                            // For categories or flat lists
+                                            if (!parentName && node.name === displayName) return node;
+                                            
+                                            // Recursive search
+                                            if (node.children) {
+                                                const found = findNode(node.children, node.name);
+                                                if (found) return found;
+                                            }
+                                        }
+                                        return null;
+                                    };
+
+                                    if (this.viewMode === 'all') {
+                                        originalNode = findNode(this.data.hierarchical, parent !== 'Expenses' ? parent : null);
+                                    } else if (this.viewMode === 'category') {
+                                        originalNode = this.data.byCategory.find(n => n.name === displayName);
+                                    } else if (this.viewMode === 'subcategory') {
+                                        // In subcategory-only view, we need to find based on its unique name and category property
+                                        originalNode = this.data.bySubcategory.find(n => n.name === displayName && n.category === parent);
+                                        // Fallback if parent isn't the category (e.g., if structure changes)
+                                        if (!originalNode) originalNode = this.data.bySubcategory.find(n => n.name === displayName);
+                                    }
+
+
+                                    if (parent === null) return ''; // No tooltip for root
+
+                                    // Tooltip styled like Sankey (compact, padded)
+                                    let html = `<div style=\"padding:8px 10px;white-space:nowrap;font-family:Inter, sans-serif;font-size:12px;line-height:1.4;background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 2px 4px rgba(0,0,0,0.08)\">`;
+                                    html += `<div style="font-weight:600;margin-bottom:4px">${displayName}</div>`;
+                                    html += `<div>Amount: <strong>${formatCurrency(amount)}</strong></div>`;
+                                    
+                                    // -- Comparison Logic --
+                                    if (originalNode && originalNode.prev_value !== undefined && originalNode.prev_value !== null) {
+                                        const prevAmount = originalNode.prev_value;
+                                        const diff = amount - prevAmount;
+                                        if (prevAmount > 0) {
+                                            const pctChange = (diff / prevAmount) * 100;
+                                            const sign = pctChange >= 0 ? '+' : '';
+                                            const color = pctChange > 0 ? '#ef4444' : '#10b981'; // Merah jika naik (buruk), hijau jika turun (baik)
+                                            html += `<div style="color: ${color}; font-weight: 600;">${sign}${pctChange.toFixed(1)}% <span style="font-weight:400;color:#64748b;">vs prev. period</span></div>`;
+                                        } else if (amount > 0) {
+                                            // Kasus dari 0 ke nilai > 0 (dianggap kenaikan)
+                                            html += `<div style="color: #ef4444; font-weight: 600;">+100.0% <span style="font-weight:400;color:#64748b;">vs prev. period</span></div>`;
+                                        }
+                                    }
+                                    // -- End Comparison --
+
+                                    const pctTotal = total > 0 ? (amount / total * 100) : 0;
+                                    html += `<div style="margin-top:4px;border-top:1px solid #f1f5f9;padding-top:4px;">Share of Total: ${pctTotal.toFixed(1)}%</div>`;
+                                    if (this.viewMode === 'all' && parent && parent !== 'Expenses') {
+                                        let parentValue = 0;
+                                        for (let i = 0; i < dataTable.getNumberOfRows(); i++) {
+                                            if (dataTable.getValue(i, 0) === parent) { parentValue = dataTable.getValue(i, 2); break; }
+                                        }
+                                        const pctParent = parentValue > 0 ? (amount / parentValue * 100) : 0;
+                                        html += `<div>Share of '${parent}': ${pctParent.toFixed(1)}%</div>`;
+                                    }
+                                    html += `</div>`;
+                                    return html;
+                                },
+                                tooltip: { isHtml: true }
+                            };
+
+                            const el = this.$refs.chartdiv;
+                            el.innerHTML = '';
+                            const chart = new google.visualization.TreeMap(el);
+                            chart.draw(dataTable, options);
+                        } catch (e) {
+                            console.error('TreeMap draw error', e);
+                        }
+                    });
+                });
+            }
+        },
+        template: `
+            <section class="card p-5 flex flex-col">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <h3 class="text-slate-800 font-semibold tracking-tight mb-1">Expense Breakdown</h3>
+                        <p class="text-xs text-slate-500">Expense by category and subcategory</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <label class="text-xs text-slate-500">View</label>
+                        <select v-model="viewMode" class="header-control text-sm">
+                            <option v-for="opt in viewOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                        </select>
+                        <label class="text-xs text-slate-500">Sort by</label>
+                        <select v-model="sortMode" class="header-control text-sm">
+                            <option v-for="opt in sortOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div ref="chartContainer" class="w-full" style="height:310px;min-height:310px;overflow:hidden;">
+                    <div ref="chartdiv" style="width:100%;height:100%;"></div>
+                </div>
+
+                <div v-if="!data || data.total === 0" class="text-center text-xs text-slate-400 mt-4">
+                    No expense data available for selected filters.
+                </div>
+            </section>
+        `
+    };
+
+    // --- Net Flow Chart (BARU) ---
+    const NetFlowChart = {
+        props: ['data'],
+        template: `
+            <section class="card p-5 flex flex-col h-full">
+                <div class="flex items-start justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">Net Flow Trend</h3>
+                        <p class="small-muted mt-1">Income - Expense each month</p>
+                    </div>
+                    <div class="text-sm small-muted">📈</div>
+                </div>
+                <div v-if="chartRows.length" class="flex-grow">
+                    <div ref="chartdiv" style="height:260px;width:100%;"></div>
+                </div>
+                <p v-else class="small-muted flex-grow flex items-center justify-center">Belum ada data Net Flow.</p>
+            </section>
+        `,
+        computed: {
+            chartRows() {
+                if (!this.data || !this.data.length) return [];
+                // Ambil max 12 periode terbaru, urut ASC
+                const sorted = [...this.data].sort((a,b)=> a.PeriodLabel.localeCompare(b.PeriodLabel)).slice(-12);
+                
+                return sorted.map(r => [
+                    this.formatLabel(r.PeriodLabel),
+                    r.Income,
+                    r.Expense,
+                    r.NetFlowAmount
+                ]);
+            }
+        },
+        mounted() {
+            // PERBAIKAN: Tambahkan sedikit delay pada draw awal untuk memastikan DOM stabil
+            setTimeout(() => this.draw(), 50); 
+            window.addEventListener('resize', this.onResize);
+        },
+        beforeUnmount() { window.removeEventListener('resize', this.onResize); },
+        watch: { 
+            data(){ this.$nextTick(this.draw); } 
+        },
+        methods: {
+            formatLabel(lbl){
+                if (!lbl || !lbl.includes('-')) return lbl;
+                const [y,m] = lbl.split('-');
+                const d = new Date(Number(y), Number(m)-1);
+                // Improvement: Tampilkan tahun lengkap agar lebih jelas
+                return d.toLocaleString('en-US',{month:'short'})+' '+y; 
+            },
+            onResize(){ clearTimeout(this._rz); this._rz = setTimeout(() => this.draw(), 150); },
+            draw(){
+                // PERBAIKAN: Tambah pengecekan elemen untuk mencegah error jika komponen hilang
+                if (!this.chartRows.length || !this.$refs.chartdiv) {
+                    if (this.$refs.chartdiv) this.$refs.chartdiv.innerHTML = '';
+                    return;
+                }
+                google.charts.setOnLoadCallback(() => {
+                    try{
+                        const dt = new google.visualization.DataTable();
+                        dt.addColumn('string','Period');
+                        dt.addColumn('number','Income');
+                        dt.addColumn('number','Expense');
+                        dt.addColumn('number','Net Flow');
+                        this.chartRows.forEach(r=> dt.addRow(r));
+                        
+                        const opt = {
+                            backgroundColor:'transparent',
+                            fontName: 'Inter',
+                            chartArea:{left:60, top:20, right:50, height:'70%'},
+                            legend:{position:'bottom', textStyle: { color: '#4a5568', fontSize: 12 }},
+                            series: {
+                                0: { type:'bars', targetAxisIndex:0, color:'#10b981' },
+                                1: { type:'bars', targetAxisIndex:0, color:'#ef4444' },
+                                2: { type:'line', targetAxisIndex:1, color:'#3b82f6', lineWidth:3, pointSize: 6, pointShape: 'circle' }
+                            },
+                            vAxes: {
+                                0: { 
+                                    textStyle: { color: '#6b7280', fontSize: 11 },
+                                    gridlines: { color: '#eef2ff', count: 5 },
+                                    format: 'short',
+                                    viewWindow: { min: 0 }
+                                },
+                                1: { 
+                                    textStyle: { color: '#3b82f6', fontSize: 11 },
+                                    gridlines: { color: 'transparent' },
+                                    format: 'short'
+                                }
+                            },
+                            hAxis: {
+                                textStyle: { color: '#6b7280', fontSize: 11 }
+                            },
+                            focusTarget:'datum',
+                            tooltip: { isHtml: true, textStyle: { fontName: 'Inter' } }
+                        };
+                        const chart = new google.visualization.ComboChart(this.$refs.chartdiv);
+                        chart.draw(dt,opt);
+                    }catch(e){ console.error('NetFlow chart error', e); }
+                });
+            }
+        }
+    };
+    
+    // --- Financial Insights Card (baru) ---
+    const FinancialInsightsCard = {
+        props: ['data','kpi','wallets','goals','budget','liabilities','expenseTree'],
+        template: `
+            <section class="card p-5 flex flex-col max-h-96 overflow-y-auto financial-insights">
+                <div class="font-bold text-lg mb-3">Financial Insights</div>
+
+                <!-- Stability & Protection -->
+                <div class="border rounded-lg p-3 mb-3 bg-slate-50 section">
+                    <div class="title">Stability & Protection <span class="ml-2 cursor-pointer" :title="stabilityInfo">
+                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-4m0-4h.01"/></svg>
+                    </span></div>
+                    <div class="content" v-html="combinedPerSection.stability"></div>
+                </div>
+
+                <!-- Savings Performance -->
+                <div class="border rounded-lg p-3 mb-3 bg-slate-50 section">
+                    <div class="title">Savings Performance <span class="ml-2 cursor-pointer" :title="savingsInfo">
+                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-4m0-4h.01"/></svg>
+                    </span></div>
+                    <div class="content" v-html="combinedPerSection.savings"></div>
+                </div>
+
+                <!-- Spending Behavior -->
+                <div class="border rounded-lg p-3 mb-3 bg-slate-50 section">
+                    <div class="title">Spending Behavior <span class="ml-2 cursor-pointer" :title="spendingInfo">
+                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-4m0-4h.01"/></svg>
+                    </span></div>
+                    <div class="content" v-html="combinedPerSection.spending"></div>
+                </div>
+
+                <!-- Wins & Impact -->
+                <div class="border rounded-lg p-3 mb-3 bg-slate-50 section">
+                    <div class="title">Wins & Impact <span class="ml-2 cursor-pointer" :title="winsInfoWithNoData">
+                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-4m0-4h.01"/></svg>
+                    </span></div>
+                    <div class="content" v-html="combinedPerSection.wins || bigChangeLine"></div>
+                </div>
+            </section>
+        `,
+        methods: { formatCurrency, formatPercentage },
+        computed: {
+            // Tooltip explanations (baru)
+            stabilityInfo(){
+                return 'Menunjukkan berapa bulan pengeluaran bisa ditutup oleh dana likuid (saldo yang mudah dipakai). Juga jumlah tagihan jatuh tempo 7 hari ke depan.';
+            },
+            savingsInfo(){
+                return 'Rasio tabungan = Saving / Income periode ini. Target umum 20%. Savings gap = tambahan yang perlu ditabung per bulan agar sampai 20%.';
+            },
+            spendingInfo(){
+                return 'Menampilkan kategori belanja terbesar dan apakah total belanja naik atau turun dibanding periode sebelumnya (merah = naik, hijau = turun).';
+            },
+            winsInfoWithNoData(){
+                return 'Menyorot penurunan besar suatu kategori dan goals yang selesai. Jika belum ada, tampil pesan motivasi.';
+            },
+            // --- Stability ---
+            monthsCovered() {
+                const months = Math.max(1, Number((this.kpi && this.kpi.monthsInRange) || 1));
+                const totalExpense = (this.expenseTree && Number(this.expenseTree.total)) || 0;
+                const avgMonthlyExpense = totalExpense > 0 ? totalExpense / months : 0;
+
+                // Prefer backend-provided liquidAssets (kpi or top-level dashboard data)
+                const liquidFromKpi = Number((this.kpi && this.kpi.liquidAssets) || 0);
+                const liquidFromData = Number((this.data && this.data.liquidAssets) || 0);
+                const liquid = liquidFromKpi || liquidFromData || 0;
+
+                const cash = liquid || this.cashOnHand; // backend first, then wallet-based fallback
+                return avgMonthlyExpense > 0 ? Math.max(0, Math.round(cash / avgMonthlyExpense)) : 0;
+            },
+
+            cashOnHand() {
+                // Fallback calculation: sum balances of wallets classified as liquid (only used when backend didn't provide liquidAssets)
+                const likuidTypes = ['cash & bank', 'e-wallet', 'digital wallet', 'cash', 'bank', 'rekening', 'gopay', 'ewallet', 'ovo'];
+                const fromWallets = (this.wallets || []).reduce((s, w) => {
+                  if (!w) return s;
+                  const t = String(w.Type || '').trim().toLowerCase();
+                  if (t && likuidTypes.some(x => t.includes(x))) return s + (Number(w.Balance) || 0);
+                  
+                  // Fallback 1: Cek dari nama wallet jika Type kosong
+                  const name = String(w.Wallet || '').toLowerCase();
+                  if (!t && (name.includes('bca') || name.includes('bank') || name.includes('gopay') || name.includes('ovo'))) return s + (Number(w.Balance) || 0);
+
+                  // Fallback 2 (BARU): Cek dari 'Sources' yang diobservasi jika Type masih kosong
+                  if (!t && Array.isArray(w.Sources) && w.Sources.length > 0) {
+                    const sourcesStr = w.Sources.join(' ').toLowerCase();
+                    if (likuidTypes.some(k => sourcesStr.includes(k))) {
+                      return s + (Number(w.Balance) || 0);
+                    }
+                  }
+                  
+                  return s;
+                }, 0);
+
+                // Last-resort fallback: use net cash flow if nothing else available
+                const k = this.kpi || {};
+                const fallbackFromKpi = Number(k.liquidAssets || (Number(k.income || 0) - Number(k.expense || 0))) || 0;
+
+                return fromWallets || fallbackFromKpi || 0;
+            },
+
+            // CHANGED: show stability even jika balanceSummary missing, with fallback message
+            combinedPerSection() {
+                const fi = (this.data && this.data.financialInsights) || {};
+                const stabilityParts = [];
+
+                // prefer backend-provided balanceSummary, but fallback to computed monthsCovered when expense total exists
+                if (fi.balanceSummary) {
+                    stabilityParts.push(`Liquid assets cover <b>${this.monthsCovered}</b> months of expenses`);
+                } else if (this.expenseTree && Number(this.expenseTree.total) > 0) {
+                    const liquidAmt = Number((this.kpi && this.kpi.liquidAssets) || 0);
+                    stabilityParts.push(`Liquid assets of <b>${this.formatCurrency(liquidAmt)}</b> roughly cover <b>${this.monthsCovered}</b> months of expenses based on expense total.`);
+                } else {
+                    // give hint what missing
+                    stabilityParts.push('No expense data available to compute coverage. Ensure expense tree is generated in backend.');
+                }
+
+                if (this.dueSoonCount > 0) {
+                    stabilityParts.push(`${this.dueSoonCount} upcoming payments due soon (${this.formatCurrency(this.dueSoonTotal)})`);
+                }
+
+                // --- Bagian Savings (REVISED LOGIC) ---
+                const savingsParts = [];
+                const income = Number((this.kpi || {}).income) || 0;
+                const saving = Number((this.kpi || {}).saving) || 0;
+
+                if (income > 0) {
+                    const pct = parseFloat(this.savingsPct);
+                    const targetRatio = 20;
+                    if (pct >= targetRatio) {
+                        savingsParts.push(`You're saving <b class="text-emerald-600">${this.savingsPct}%</b> of income, meeting the financial health standard of ${targetRatio}%.`);
+                    } else {
+                        savingsParts.push(`You're saving <b>${this.savingsPct}%</b> of income, which is below the financial health standard of ${targetRatio}%.`);
+                    }
+                    if (this.savingsGapAmount > 0) {
+                        savingsParts.push(`Save <b>${this.formatCurrency(this.savingsGapAmount)}</b> more monthly to reach the target.`);
+                    }
+                } else if (saving > 0) {
+                    savingsParts.push(`You saved <b>${this.formatCurrency(saving)}</b>, but savings rate cannot be calculated without income.`);
+                }
+                // Jika income 0 dan saving 0, tidak ada yang ditambahkan.
+
+                const spendingParts = [];
+                if (fi.majorSpent && fi.majorSpent.name) {
+                    const pct = (typeof fi.majorSpent.pct === 'number') ? fi.majorSpent.pct.toFixed(1) : '';
+                    spendingParts.push(`Most spent on <b>${fi.majorSpent.name}</b>${pct ? ` (${pct}%)` : ''}`);
+                }
+                if (fi.movingAverage) {
+                    const { current, previous, changePct } = fi.movingAverage;
+                    if (changePct === null || previous === 0) {
+                        spendingParts.push(`spending this period is <b>${this.formatCurrency(current)}</b> (no previous data)`);
+                    } else if (changePct === 0) {
+                        spendingParts.push(`spending is <b>stable</b> vs previous period`);
+                    } else {
+                        const trend = changePct > 0 ? 'increased' : 'decreased';
+                        const pctText = Math.abs(changePct).toFixed(1);
+                        spendingParts.push(`spending has <b class="${changePct>0 ? 'text-red-500' : 'text-emerald-600'}">${trend} by ${pctText}%</b> vs previous period`);
+                    }
+                }
+
+                const winsParts = [];
+                // 1. Cek "kemenangan" dari penurunan pengeluaran yang signifikan
+                if (fi.bigChange && fi.bigChange.name && fi.bigChange.type === 'decrease') {
+                    const { name, pct } = fi.bigChange;
+                    // pct sudah negatif, jadi kita ambil nilai absolutnya
+                    const pctText = pct === null ? '' : `by ${Math.abs(pct).toFixed(1)}%`;
+                    winsParts.push(`Great job! Spending on <b>${name}</b> has significantly <b>decreased</b> ${pctText}.`);
+                }
+
+                // 2. Cek "kemenangan" dari tujuan (goals) yang selesai
+                const completedGoals = (this.goals || []).filter(g => g.Status === 'Completed');
+                if (completedGoals.length > 0) {
+                    const goalNames = completedGoals.map(g => `<b>${g.GoalName}</b>`).join(', ');
+                    winsParts.push(`Congratulations on completing your goal(s): ${goalNames}!`);
+                }
+
+                return {
+                    stability: stabilityParts.length ? stabilityParts.join('; ') + '.' : 'No notable stability insights at this time.',
+                    savings: savingsParts.length ? savingsParts.join(' ') : 'No savings activity recorded for this period.',
+                    spending: spendingParts.length ? spendingParts.join('; ') + '.' : 'No notable spending behavior detected.',
+                    wins: winsParts.length ? winsParts.join(' ') : 'No specific wins detected, keep up the great work!'
+                };
+            },
+
+            // --- Savings ---
+            savingsPct() {
+                const k = this.kpi || {};
+                const inc = Number(k.income) || 0;
+                const sav = Number(k.saving) || 0;
+                return inc > 0 ? ((sav / inc) * 100).toFixed(1) : '0.0';
+            },
+            savingsGapAmount() {
+                const targetRatio = 0.20; // 20%
+                const k = this.kpi || {};
+                const inc = Number(k.income) || 0;
+                const sav = Number(k.saving) || 0;
+                const months = Math.max(1, Number((this.kpi && this.kpi.monthsInRange) || 1));
+                
+                if (inc === 0 || months === 0) return 0;
+
+                const monthlyIncome = inc / months;
+                const monthlySaving = sav / months;
+                const targetSaving = monthlyIncome * targetRatio;
+                
+                return Math.max(0, targetSaving - monthlySaving);
+            },
+
+            // --- Spending ---
+            dueSoonCount() {
+                if (!this.data || !this.data.liabilitiesUpcoming) return 0;
+                const now = new Date();
+                return (this.data.liabilitiesUpcoming.filter(item => {
+                    const dueDate = new Date(item.DueDate);
+                    return dueDate >= now && dueDate <= new Date(now.getTime() + 7 * 86400000); // Dalam 7 hari ke depan
+                }) || []).length;
+            },
+            dueSoonTotal() {
+                if (!this.data || !this.data.liabilitiesUpcoming) return 0;
+                const now = new Date();
+                return (this.data.liabilitiesUpcoming.reduce((total, item) => {
+                    const dueDate = new Date(item.DueDate);
+                    return dueDate >= now && dueDate <= new Date(now.getTime() + 7 * 86400000) ? total + (item.Amount || 0) : total;
+                }, 0) || 0);
+            },
+
+            // --- Net Flow ---
+            bigChangeLine() {
+                const k = this.kpi || {};
+                const change = (Number(k.net) - Number(k.prev_net)) || 0;
+                const absChange = Math.abs(change);
+                const sign = change >= 0 ? '+' : '-';
+                const pctChange = (absChange > 0 && Math.abs(Number(k.prev_net)) > 0) ? (absChange / Math.abs(Number(k.prev_net)) * 100) : 0;
+                const pctText = `${sign}${pctChange.toFixed(1)}%`;
+                const arrow = change > 0 ? '📈' : '📉';
+                const color = change > 0 ? 'text-emerald-600' : 'text-red-600';
+                return `<span class="${color} font-semibold">${arrow} ${this.formatCurrency(absChange)} (${pctText})</span>`;
+            },
+            cashFlowSummary() {
+                const k = this.kpi || {};
+                const income = Number(k.income) || 0;
+                const expense = Number(k.expense) || 0;
+                const net = Number(k.net) || 0;
+                const prevIncome = Number(k.prev_income) || 0;
+                const prevExpense = Number(k.prev_expense) || 0;
+                const prevNet = Number(k.prev_net) || 0;
+                const incomeChange = income - prevIncome;
+                const expenseChange = expense - prevExpense;
+                const netChange = net - prevNet;
+                return {
+                    income: { current: income, previous: prevIncome, change: incomeChange },
+                    expense: { current: expense, previous: prevExpense, change: expenseChange },
+                    net: { current: net, previous: prevNet, change: netChange }
+                };
+            }
+        }
+    };
+
+    // --- Main App ---
+    const DashboardApp = {
+        template: `
+            <div class="max-w-7xl mx-auto p-4">
+                <!-- Header -->
+                <header class="glass card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 relative z-30">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-sky-500 to-emerald-400 flex items-center justify-center text-white font-bold header-logo text-lg">SkSk</div>
+                        <div>
+                            <h1 class="header-logo text-lg font-bold text-gray-800">SatukasSatukas</h1>
+                            <p class="small-muted">Personal Financial Dashboard</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2">
+                                <button @click="toggleDataMode" class="header-control" aria-label="Toggle data mode">Mode: {{ useDummyData ? 'Demo' : 'Live' }}</button>
+                                <div class="flex items-center gap-2" role="tablist" aria-label="Main view selector">
+                                    <button @click="activeView='dashboard'" :class="['header-control', {active: activeView==='dashboard'}]" role="tab" :aria-selected="activeView==='dashboard'">Dashboard</button>
+                                    <button @click="activeView='ai_chat'" :class="['header-control', {active: activeView==='ai_chat'}]" role="tab" :aria-selected="activeView==='ai_chat'">AI Chat</button>
+                                </div>
+                            </div>
+
+                            <div class="w-px h-6 bg-gray-300"></div>
+                            <div class="flex items-center gap-2">
+
+                                <!-- Tombol Refresh -->
+                                <button @click="fetchData(true)" :disabled="loading"
+                                        class="header-control icon-btn disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Refresh Data" aria-label="Refresh">
+                                    <span v-if="loading" class="inline-block animate-spin">⏳</span>
+                                    <span v-else>🔄</span>
+                                </button>
+
+                                <!-- Date Range Picker -->
+                                <div class="relative">
+                                    <button @click="showDateFilter = !showDateFilter" class="header-control w-64 text-left flex items-center justify-between">
+                                        <span class="truncate">{{ periodLabel }}</span>
+                                        <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                    </button>
+                                    <div v-if="showDateFilter" class="absolute z-40 right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border" @click.stop>
+                                                                               <div class="flex">
+                                            <div class="w-36 border-r">
+                                                <div class="p-2 space-y-1">
+                                                    <button v-for="p in periodOptions" :key="p.value" @click="setPeriod(p.value)" class="w-full text-left text-sm px-3 py-1.5 rounded hover:bg-gray-100" :class="{'bg-sky-100 text-sky-800 font-semibold': selectedPeriod === p.value}">
+                                                        {{ p.label }}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="flex-1 p-3">
+                                                <h4 class="text-sm font-semibold mb-2">Custom Range</h4>
+                                                <div class="space-y-2">
+                                                    <div>
+                                                        <label class="text-xs text-gray-500">Start Date</label>
+                                                        <input type="date" v-model="filters.startDate" class="w-full mt-1 p-1.5 border rounded-md text-sm"/>
+                                                    </div>
+                                                    <div>
+                                                        <label class="text-xs text-gray-500">End Date</label>
+                                                        <input type="date" v-model="filters.endDate" class="w-full mt-1 p-1.5 border rounded-md text-sm"/>
+                                                    </div>
+                                                </div>
+                                                <div class="mt-3 flex justify-end gap-2">
+                                                     <button type="button" @click="showDateFilter=false" class="px-3 py-1 text-sm rounded-md bg-gray-100">Cancel</button>
+                                                     <button type="button" @click="applyCustomDate" class="px-3 py-1 text-sm rounded-md bg-sky-600 text-white">Apply</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button @click="showFilterModal = true" class="header-control relative icon-btn">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h18M7 11h10M11 18h2"></path></svg>
+                                    <span v-if="activeFilterCount>0" class="absolute -top-1 -right-1 inline-flex items-center justify-center text-xs font-bold text-white bg-sky-600 rounded-full h-4 w-4">{{ activeFilterCount }}</span>
+                                </button>
+
+                                                                <!-- Export Dropdown -->
+                                                                <div class="relative" @keydown.esc="showExportMenu=false">
+                                                                    <button @click="showExportMenu = !showExportMenu" class="header-control flex items-center gap-1" :aria-expanded="showExportMenu ? 'true' : 'false'" aria-haspopup="menu">
+                                                                        <span v-if="!exporting">⬇️ Export</span>
+                                                                        <span v-else class="animate-pulse">Processing...</span>
+                                                                        <svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                                                    </button>
+                                                                    <div v-if="showExportMenu" class="absolute right-0 mt-2 w-64 bg-white border rounded-lg shadow-xl p-3 z-50">
+                                                                        <div class="text-xs font-semibold text-gray-600 mb-2">Export Dashboard CSV</div>
+                                                                        <label class="flex items-start gap-2 text-xs mb-3 cursor-pointer select-none">
+                                                                            <input type="checkbox" v-model="exportIncludeRaw" class="mt-0.5">
+                                                                            <span>Sertakan semua transaksi (raw all-time) di bagian akhir file</span>
+                                                                        </label>
+                                                                        <button @click="exportCsv" :disabled="exporting" class="w-full bg-sky-600 text-white text-sm py-2 rounded-md font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                                                                            <span v-if="!exporting">Download CSV</span>
+                                                                            <span v-else>Mempersiapkan...</span>
+                                                                        </button>
+                                                                        <div v-if="exportError" class="mt-2 text-[11px] text-red-600 whitespace-pre-line">{{ exportError }}</div>
+                                                                        <div class="mt-2 text-[10px] text-gray-500 leading-snug">File akan berisi beberapa section (# KPI Summary, # Wallet Status, dst) dalam satu CSV sesuai filter aktif.</div>
+                                                                    </div>
+                                                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- KPI summary -->
+                <div v-if="searchQuery" class="mb-2 text-xs text-gray-600">{{ searchStatusText }}</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div class="card p-4 kpi income">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="text-xs small-muted flex items-center gap-1">
+                                  <span>Total Income</span>
+                                  <span v-if="filters.walletOwner" :title="'Filtered by Wallet Owner: '+filters.walletOwner" class="inline-block text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-semibold">{{ filters.walletOwner }}</span>
+                                </div>
+                                <div class="text-lg font-bold text-gray-800">{{ formatCurrency(kpiSummary.income) }}</div>
+                            </div>
+                            <div class="text-sm small-muted">💸</div>
+                        </div>
+                        <div class="small-muted mt-2 flex items-center text-xs" v-html="kpiComparison('income')"></div>
+                    </div>
+                    <div class="card p-4 kpi expense">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="text-xs small-muted flex items-center gap-1">
+                                  <span>Total Expense</span>
+                                  <span v-if="filters.walletOwner" :title="'Filtered by Wallet Owner: '+filters.walletOwner" class="inline-block text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-semibold">{{ filters.walletOwner }}</span>
+                                </div>
+                                <div class="text-lg font-bold text-gray-800">{{ formatCurrency(kpiSummary.expense) }}</div>
+                            </div>
+                            <div class="text-sm small-muted">🧾</div>
+                        </div>
+                        <div class="small-muted mt-2 flex items-center text-xs" v-html="kpiComparison('expense')"></div>
+                    </div>
+                    <div class="card p-4 kpi net">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="text-xs small-muted flex items-center gap-1">
+                                  <span>{{ netWorthLabel }}</span>
+                                  <span v-if="filters.walletOwner" :title="'Filtered by Wallet Owner: '+filters.walletOwner" class="inline-block text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-semibold">{{ filters.walletOwner }}</span>
+                                </div>
+                                <div :class="kpiSummary.netWorth>=0 ? 'text-emerald-600 font-bold text-lg' : 'text-red-500 font-bold text-lg'">{{ formatCurrency(kpiSummary.netWorth) }}</div>
+                            </div>
+                            <div class="text-sm small-muted" :title="filters.walletOwner ? 'Net Worth for '+filters.walletOwner : 'Total Assets - Liabilities (All Owners)'"><span>🏦</span></div>
+                        </div>
+                        <div class="small-muted mt-2 flex items-center text-xs" v-html="kpiComparison('netWorth')"></div>
+                    </div>
+                    <div class="card p-4 kpi saving">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="text-xs small-muted flex items-center gap-1">
+                                  <span>Total Saving</span>
+                                  <span v-if="filters.walletOwner" :title="'Filtered by Wallet Owner: '+filters.walletOwner" class="inline-block text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-semibold">{{ filters.walletOwner }}</span>
+                                </div>
+                                <div class="text-lg font-bold text-gray-800">{{ formatCurrency(kpiSummary.saving) }}</div>
+                            </div>
+                            <div class="text-sm small-muted">💎</div>
+                        </div>
+                        <div class="small-muted mt-2 flex items-center text-xs" v-html="kpiComparison('saving')"></div>
+                    </div>
+                </div>
+
+                <main>
+                    <div v-if="loading" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="card p-6 animate-pulse h-64 skeleton"></div>
+                        <div class="card p-6 animate-pulse h-64 skeleton"></div>
+                        <div class="card p-6 animate-pulse h-64 skeleton"></div>
+                        <div class="card p-6 animate-pulse h-64 skeleton"></div>
+                        <div class="card p-6 animate-pulse h-64 skeleton"></div>
+                        <div class="card p-6 animate-pulse h-64 skeleton"></div>
+                    </div>
+
+                    <!-- Expense TreeMap setelah KPI Row -->
+                    <div v-if="activeView === 'dashboard' && !loading" class="mb-6">
+                        <expense-tree-map :data="dashboardData.expenseTreeMap"></expense-tree-map>
+                    </div>
+
+                    <!-- Draggable Dashboard Cards -->
+                    <div v-if="activeView === 'dashboard' && !loading" class="grid grid-cols-1 lg:grid-cols-2 gap-6 select-none">
+                    <div v-for="card in orderedCards" :key="card.key"
+                        class="relative group transition-shadow pt-3" 
+                        :class="[ draggingKey===card.key ? 'ring-2 ring-sky-400' : '', (dragOverKey===card.key && draggingKey!==card.key) ? 'outline outline-2 outline-dashed outline-sky-300' : '' ]"
+                        @dragover.prevent="onDragOver($event, card.key)"
+                        @drop.prevent="onDrop($event, card.key)"
+                        @click.stop="activateHandle(card.key)">
+                            <!-- Drag Handle (only area that starts drag) -->
+                            <div class="absolute inset-x-0 -top-1 h-4 flex items-center justify-start pointer-events-none">
+                                <div v-show="activeHandleKey===card.key"
+                                     draggable="true" @dragstart="onDragStart($event, card.key)" @dragend="onDragEnd"
+                                     class="pointer-events-auto ml-1 px-2 py-0.5 text-[10px] rounded-full bg-sky-600 text-white shadow cursor-move opacity-90 select-none">
+                                    ↕ Drag
+                                </div>
+                            </div>
+                            <component :is="card.component" v-bind="card.props"></component>
+                        </div>
+                    </div>
+                    
+                    
+                    <div v-if="activeView === 'ai_chat' && !loading">
+                                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                                    <!-- Main Chat Column -->
+                                                    <div class="lg:col-span-2 bg-white rounded-xl shadow-lg p-6 flex flex-col">
+                                                        <div class="flex items-start justify-between mb-4">
+                                                            <div>
+                                                                <h2 class="text-xl font-bold text-gray-800">Asisten AI Keuangan</h2>
+                                                                <p class="text-xs text-gray-500">Environment khusus (tidak mempengaruhi dashboard filters)</p>
+                                                            </div>
+                                                            <button @click="resetAIChat" class="text-xs text-sky-700 bg-sky-50 hover:bg-sky-100 px-3 py-1 rounded-md font-semibold">Reset Chat</button>
+                                                        </div>
+                                                        <!-- Context Selectors -->
+                                                        <div class="grid grid-cols-2 gap-4 mb-4">
+                                                            <div>
+                                                                <label class="text-xs font-semibold text-gray-600 block mb-1">Owner (wajib)</label>
+                                                                <select v-model="aiOwner" @change="onAIContextChange" class="w-full p-2 border rounded-lg text-sm" :class="{'border-red-400': !aiOwner && aiTriedSubmit}">
+                                                                    <option value="" disabled>Pilih Owner...</option>
+                                                                    <option v-for="o in availableFilters.walletOwners" :key="o" :value="o">{{ o }}</option>
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <label class="text-xs font-semibold text-gray-600 block mb-1">Question Type / Intent (wajib)</label>
+                                                                <select v-model="aiIntent" @change="onAIContextChange" class="w-full p-2 border rounded-lg text-sm" :class="{'border-red-400': !aiIntent && aiTriedSubmit}">
+                                                                    <option value="" disabled>Pilih Intent...</option>
+                                                                    <option value="DirectQuery">Direct Query</option>
+                                                                    <option value="ComparisonQuery">Comparison</option>
+                                                                    <option value="AnalyticalQuery">Analytical</option>
+                                                                    <option value="GeneralAdvisory">Advisory</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <!-- Sample Prompts -->
+                                                        <div class="mb-4" v-if="aiIntent">
+                                                            <div class="flex items-center justify-between mb-2">
+                                                                <span class="text-xs font-semibold text-gray-600">Sample Prompts (klik untuk pakai)</span>
+                                                                <button @click="shufflePrompts" class="text-xs text-sky-600">Shuffle</button>
+                                                            </div>
+                                                            <div class="flex flex-wrap gap-2">
+                                                                <button v-for="p in visiblePrompts" :key="p" @click="applyPrompt(p)" class="text-xs px-3 py-1 rounded-full border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700">{{ p }}</button>
+                                                            </div>
+                                                        </div>
+                                                        <!-- Chat Window -->
+                                                        <div class="chat-window flex-grow overflow-y-auto border rounded-lg p-4 mb-4 space-y-4" ref="chatWindow">
+                                                            <div v-for="(message, index) in chatHistory" :key="index" :class="{'text-right': message.isUser}">
+                                                                <div class="inline-block max-w-full md:max-w-[85%] p-3 rounded-lg align-top" :class="message.isUser ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'">
+                                                                    <div class="text-[11px] uppercase tracking-wide mb-1 font-semibold" v-if="message.metaTag">{{ message.metaTag }}</div>
+                                                                    <p class="prose prose-sm" v-html="message.text"></p>
+                                                                </div>
+                                                            </div>
+                                                            <div v-if="aiLoading" class="text-left">
+                                                                <div class="inline-block p-3 rounded-lg bg-gray-200 text-gray-800 text-sm"><p>AI sedang berpikir...</p></div>
+                                                            </div>
+                                                        </div>
+                                                        <!-- Input -->
+                                                        <div class="flex gap-2 mt-auto">
+                                                            <input type="text" v-model="userQuestion" @keyup.enter="sendAIChat" :disabled="aiLoading" placeholder="Tanyakan sesuatu..." class="flex-grow p-3 border rounded-lg">
+                                                            <button @click="sendAIChat" :disabled="aiLoading || !userQuestion.trim()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50">Kirim</button>
+                                                        </div>
+                                                        <p v-if="aiError" class="text-xs text-red-600 mt-2">{{ aiError }}</p>
+                                                    </div>
+                                                    <!-- History Column -->
+                                                    <div class="bg-white rounded-xl shadow-lg p-6 flex flex-col">
+                                                        <div class="flex items-start justify-between mb-4">
+                                                            <div>
+                                                                <h3 class="font-bold text-gray-800">History</h3>
+                                                                <p class="text-xs text-gray-500">Owner & Intent scoped</p>
+                                                            </div>
+                                                            <button @click="refreshHistory" class="text-xs text-sky-700 bg-sky-50 hover:bg-sky-100 px-2 py-1 rounded-md">Refresh</button>
+                                                        </div>
+                                                        <div class="flex items-center gap-2 mb-3">
+                                                            <select v-model="historyIntentFilter" @change="refreshHistory" class="text-xs border rounded-md px-2 py-1">
+                                                                <option value="All">All Intents</option>
+                                                                <option value="DirectQuery">Direct</option>
+                                                                <option value="ComparisonQuery">Comparison</option>
+                                                                <option value="AnalyticalQuery">Analytical</option>
+                                                                <option value="GeneralAdvisory">Advisory</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="flex-grow overflow-y-auto border rounded-lg p-3 space-y-3" v-if="historyItems.length">
+                                                            <div v-for="h in historyItems" :key="h.queryId" class="p-2 rounded-md bg-gray-50 hover:bg-sky-50 cursor-pointer border border-transparent hover:border-sky-200" @click="restoreHistory(h)">
+                                                                <div class="flex items-center justify-between gap-2">
+                                                                    <div class="text-[11px] font-semibold text-sky-700">{{ h.intent || 'Unknown' }}</div>
+                                                                    <div class="text-[10px] text-gray-400" v-if="h.timestamp">{{ formatTs(h.timestamp) }}</div>
+                                                                </div>
+                                                                <div class="text-xs text-gray-700 truncate" :title="h.question">Q: {{ h.question }}</div>
+                                                                <div class="text-[11px] text-gray-500 line-clamp-2">A: {{ plainText(h.answer).slice(0,120) }}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div v-else class="text-xs text-gray-400 flex-grow flex items-center justify-center">No history.</div>
+                                                        <div class="mt-3 text-[10px] text-gray-400">Klik item untuk memuat ulang Q/A lama (tidak menambah limit).</div>
+                                                    </div>
+                                                </div>
+                    </div>
+                </div>
+                <!-- Filter Modal -->
+                <div v-if="showFilterModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showFilterModal=false">
+                    <div class="card p-6 w-full max-w-md">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-semibold">Advanced Filters</h2>
+                            <button @click="showFilterModal=false" class="text-gray-500">✕</button>
+                        </div>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="text-sm small-muted">Expense Purpose</label>
+                                <select v-model="filters.expensePurpose" class="w-full mt-1 p-2 border rounded-lg">
+                                    <option value="">All Purposes</option>
+                                    <option v-for="i in availableFilters.expensePurposes" :key="i" :value="i">{{ i }}</option>
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-sm small-muted">Category</label>
+                                    <select v-model="filters.category" class="w-full mt-1 p-2 border rounded-lg">
+                                        <option value="">All Categories</option>
+                                        <option v-for="i in availableFilters.categories" :key="i" :value="i">{{ i }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-sm small-muted">Subcategory</label>
+                                    <select v-model="filters.subcategory" class="w-full mt-1 p-2 border rounded-lg">
+                                        <option value="">All Subcategories</option>
+                                        <option v-for="i in availableFilters.subcategories" :key="i" :value="i">{{ i }}</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="relative">
+                                    <label class="text-sm small-muted">Note</label>
+                                    <button type="button" @click="noteOpen=!noteOpen" class="w-full mt-1 p-2 border rounded-lg flex items-center justify-between">
+                                        <span class="truncate">{{ filters.note || 'All Notes' }}</span>
+                                        <svg class="w-4 h-4 text-gray-500 ml-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                                    </button>
+                                    <div v-if="noteOpen" class="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-auto">
+                                        <div class="p-2 sticky top-0 bg-white border-b">
+                                            <input v-model="noteQuery" class="w-full p-2 border rounded-md" placeholder="Add or search" />
+                                        </div>
+                                        <div class="p-2 hover:bg-gray-50 cursor-pointer flex items-center gap-2" @click="selectNote('')">
+                                            <span class="w-3 h-3 rounded-full border border-gray-400 inline-block"></span>
+                                            <span>All Notes</span>
+                                        </div>
+                                        <div v-for="n in filteredNotes" :key="n" class="p-2 hover:bg-gray-50 cursor-pointer flex items-center gap-2" @click="selectNote(n)">
+                                            <span :class="['w-3 h-3 rounded-full border inline-block', filters.note===n ? 'border-sky-600 bg-sky-600' : 'border-gray-400']"></span>
+                                            <span class="truncate">{{ n }}</span>
+                                        </div>
+                                        <div v-if="filteredNotes.length===0" class="p-3 text-sm text-gray-500">No notes found</div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-sm small-muted">Description (contains)</label>
+                                    <input type="text" v-model="filters.description" class="w-full mt-1 p-2 border rounded-lg" placeholder="e.g. minimarket" />
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-sm small-muted">Wallet</label>
+                                    <select v-model="filters.wallet" class="w-full mt-1 p-2 border rounded-lg">
+                                        <option value="">All Wallets</option>
+                                        <option v-for="i in availableFilters.wallets" :key="i" :value="i">{{ i }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-sm small-muted">Owner</label>
+                                    <select v-model="filters.walletOwner" class="w-full mt-1 p-2 border rounded-lg">
+                                        <option value="">All Owners</option>
+                                        <option v-for="i in availableFilters.walletOwners" :key="i" :value="i">{{ i }}</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex justify-end gap-2">
+                            <button @click="resetFilters" class="px-4 py-2 rounded-lg bg-gray-100">Reset</button>
+                            <button @click="applyFilters" class="px-4 py-2 rounded-lg bg-sky-600 text-white">Apply</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `,
+        components: { 
+            GoalsStatus, 
+            BudgetStatus, 
+            LiabilitiesUpcoming, 
+            RatiosChart, 
+            SankeyChart, 
+            WalletStatus,
+            ExpenseTreeMap,
+            NetFlowChart, // BARU
+            FinancialInsightsCard // TAMBAH
+        },
+        data() {
+            return {
+                useDummyData: false,
+                loading: true,
+                activeView: 'dashboard',
+                selectedPeriod: 'current_month',
+                showFilterModal: false,
+                showDateFilter: false,
+                periodOptions: [
+                    { value: 'today', label: 'Today' },
+                    { value: 'yesterday', label: 'Yesterday' },
+                    { value: 'this_week', label: 'This Week' },
+                    { value: 'last_7_days', label: 'Last 7 Days' },
+                    { value: 'current_month', label: 'This Month' },
+                    { value: 'last_month', label: 'Last Month' },
+                    { value: 'current_year', label: 'This Year' },
+                    { value: 'last_year', label: 'Last Year' },
+                    { value: 'all', label: 'All Time' },
+                    { value: 'custom', label: 'Custom Range' }
+                ],
+                filters: {
+                    wallet: '',
+                    walletOwner: '',
+                    expensePurpose: '',
+                    category: '',
+                    subcategory: '',
+                    note: '',
+                    description: '',
+                    startDate: '',
+                    endDate: ''
+                },
+                // removed flash feedback flags
+                noteOpen: false,
+                noteQuery: '',
+                availableFilters: { wallets: [], walletOwners: [], expensePurposes: [], categories: [], subcategories: [], notes: [] },
+                dashboardData: { walletStatus: [], goalsStatus: [], budgetStatus: [], liabilitiesUpcoming: [], ratios: [], sankeyData: [], expenseTreeMap: null, financialInsights: {}, kpiSummary: { income: 0, expense: 0, net:  0, saving: 0, prev_income: 0, prev_expense: 0, prev_net: 0, prev_saving: 0, netWorth: 0, prev_netWorth: 0 } },
+                aiLoading: false,
+                userQuestion: '',
+                chatHistory: [],
+                aiOwner: '',
+                aiIntent: '',
+                aiTriedSubmit: false,
+                aiError: '',
+                samplePrompts: {
+                    DirectQuery: [
+                        'Total pengeluaran bulan ini?',
+                        'Berapa total pemasukan 7 hari terakhir?',
+                        'Daftar transaksi terbesar minggu ini'
+                    ],
+                    ComparisonQuery: [
+                        'Bandingkan pengeluaran Bapak vs Ibu bulan ini',
+                        'Siapa paling banyak belanja kategori Makanan?',
+                        'Perbandingan total pemasukan 30 hari terakhir antar owner'
+                    ],
+                    AnalyticalQuery: [
+                        'Analisis pola pengeluaran 3 bulan terakhir',
+                        'Prediksi cashflow 30 hari ke depan',
+                        'Insight pengeluaran terbesar dan alasannya'
+                    ],
+                    GeneralAdvisory: [
+                        'Tips optimasi budget keluarga',
+                        'Saran meningkatkan rasio tabungan',
+                        'Bagaimana cara menurunkan pengeluaran variabel?'
+                    ]
+                },
+                visiblePrompts: [],
+                historyItems: [],
+                historyIntentFilter: 'All',
+                // Export state
+                showExportMenu: false,
+                exporting: false,
+                exportIncludeRaw: false,
+                exportError: ''
+                ,
+                // Drag & drop state
+                cardOrder: [], // array of card keys persisted
+                draggingKey: null,
+                dragOverKey: null,
+                activeHandleKey: null,
+            };
+        },
+        computed: {
+            kpiSummary() {
+                return this.dashboardData.kpiSummary || { 
+                    income: 0, expense: 0, net: 0, saving: 0,
+                    prev_income: 0, prev_expense: 0, prev_net: 0, prev_saving: 0,
+                    netWorth: 0, prev_netWorth: 0
+                };
+            },
+            netWorthLabel(){
+                return this.filters.walletOwner ? 'Filtered Net Worth' : 'Net Worth';
+            },
+            periodLabel(){
+                if (this.selectedPeriod === 'custom') {
+                    if (this.filters.startDate && this.filters.endDate) {
+                        const d1 = new Date(this.filters.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                        const d2 = new Date(this.filters.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                        return `${d1} - ${d2}`;
+                    }
+                    return 'Custom Range';
+                }
+                const option = this.periodOptions.find(p => p.value === this.selectedPeriod);
+                return option ? option.label : 'Select Period';
+            },
+            activeFilterCount(){
+                const { startDate, endDate, ...otherFilters } = this.filters;
+                return Object.values(otherFilters).reduce((c,v)=> c + (v ? 1 : 0), 0);
+            },
+            filteredNotes(){
+                const q = (this.noteQuery||'').toString().toLowerCase().trim();
+                const list = (this.availableFilters.notes||[]).filter(Boolean);
+                if (!q) return list;
+                return list.filter(n => n.toString().toLowerCase().includes(q));
+            },
+            cardsMeta(){
+                // Base metadata describing each dashboard card.
+                return [
+                    { key: 'wallet', component: 'wallet-status', props: { data: this.dashboardData.walletStatus } },
+                    { key: 'goals', component: 'goals-status', props: { data: this.dashboardData.goalsStatus } },
+                    { key: 'budget', component: 'budget-status', props: { data: this.dashboardData.budgetStatus } },
+                    { key: 'liabilities', component: 'liabilities-upcoming', props: { data: this.dashboardData.liabilitiesUpcoming } },
+                    { key: 'sankey', component: 'sankey-chart', props: { data: this.dashboardData.sankeyData } },
+                    { key: 'ratios', component: 'ratios-chart', props: { data: this.dashboardData.ratios } },
+                    { key: 'netflow', component: 'net-flow-chart', props: { data: this.dashboardData.netFlow } },
+                    { key: 'insights', component: 'financial-insights-card', props: { 
+                        data: this.dashboardData,
+                        kpi: this.kpiSummary,
+                        wallets: this.dashboardData.walletStatus,
+                        goals: this.dashboardData.goalsStatus,
+                        budget: this.dashboardData.budgetStatus,
+                        liabilities: this.dashboardData.liabilitiesUpcoming,
+                        expenseTree: this.dashboardData.expenseTreeMap
+                    } }
+                ];
+            },
+            orderedCards(){
+                const metaMap = Object.fromEntries(this.cardsMeta.map(c => [c.key, c]));
+                const result = [];
+                // Include persisted order first
+                (this.cardOrder||[]).forEach(k => { if (metaMap[k]) { result.push(metaMap[k]); delete metaMap[k]; } });
+                // Append any new cards not yet in stored order
+                Object.values(metaMap).forEach(v => result.push(v));
+                return result;
+            }
+        },
+        methods: {
+            formatCurrency, 
+            formatPercentage,
+            formatPeriodLabel,
+            // Drag & Drop Methods
+            onDragStart(e, key){
+                this.draggingKey = key;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', key);
+            },
+            onDragOver(e, key){
+                if (key === this.draggingKey) return;
+                this.dragOverKey = key;
+            },
+            onDrop(e, key){
+                const fromKey = e.dataTransfer.getData('text/plain');
+                if (!fromKey || fromKey === key) { this.dragOverKey=null; return; }
+                const order = [...this.orderedCards.map(c=>c.key)];
+                const fromIdx = order.indexOf(fromKey);
+                const toIdx = order.indexOf(key);
+                if (fromIdx === -1 || toIdx === -1) { this.dragOverKey=null; return; }
+                order.splice(toIdx, 0, order.splice(fromIdx,1)[0]);
+                this.cardOrder = order;
+                this.persistCardOrder();
+                this.dragOverKey = null;
+            },
+            onDragEnd(){
+                this.draggingKey = null;
+                this.dragOverKey = null;
+            },
+            // Handle toggle when user clicks a card to reveal the drag handle
+            activateHandle(key){
+                this.activeHandleKey = this.activeHandleKey === key ? null : key;
+            },
+            handleDocumentClick(e){
+                try{
+                    if (!this.$el) return;
+                    if (!this.$el.contains(e.target)) this.activeHandleKey = null;
+                }catch(e){ /* ignore */ }
+            },
+            persistCardOrder(){
+                try { localStorage.setItem('dashboardCardOrderV1', JSON.stringify(this.cardOrder)); } catch(e) { /* ignore */ }
+            },
+            loadCardOrder(){
+                try {
+                    const raw = localStorage.getItem('dashboardCardOrderV1');
+                    if (!raw) return;
+                    const arr = JSON.parse(raw);
+                    if (Array.isArray(arr)) {
+                        const validKeys = new Set(this.cardsMeta.map(c=>c.key));
+                        this.cardOrder = arr.filter(k => validKeys.has(k));
+                    }
+                } catch(e){ /* ignore */ }
+            },
+            selectNote(note){
+                this.filters.note = note;
+                this.noteOpen = false;
+                if (note && !this.availableFilters.notes.includes(note)) {
+                    this.availableFilters.notes.push(note);
+                }
+            },
+            kpiComparison(type) {
+                const current = this.kpiSummary[type] || 0;
+                const previousKey = 'prev_' + type;
+                const previous = this.kpiSummary[previousKey] || 0;
+                const diff = current - previous;
+
+                if (previous === 0 && current === 0) {
+                    return `No change vs prev. period`;
+                }
+                if (previous === 0 && current !== 0) {
+                    const arrow = current > 0 ? '▲' : '▼';
+                    const color = current > 0 ? 'text-emerald-600' : 'text-red-500';
+                    const pillColor = current > 0 ? 'good' : 'bad';
+                    return `<span class="${color}">${arrow} ${this.formatCurrency(Math.abs(current))}</span> <span class="kpi-pill ${pillColor}">+100%</span> vs prev. period`;
+                }
+                if (diff === 0) return `No change vs prev. period`;
+
+                let isGood = false;
+                if (type === 'income' || type === 'net' || type === 'saving' || type === 'netWorth') {
+                    isGood = diff > 0;
+                } else if (type === 'expense') {
+                    isGood = diff < 0;
+                }
+
+                const color = isGood ? 'text-emerald-600' : 'text-red-500';
+                const arrow = diff > 0 ? '▲' : '▼';
+                const pillColor = isGood ? 'good' : 'bad';
+                const absoluteDiffText = this.formatCurrency(Math.abs(diff));
+                const percentage = previous !== 0 ? (diff / Math.abs(previous)) * 100 : 0;
+                const sign = percentage > 0 ? '+' : '-';
+                const percentagePill = previous !== 0 ? `<span class="kpi-pill ${pillColor}">${sign}${Math.abs(percentage).toFixed(1)}%</span>` : '';
+                return `<span class="${color}">${arrow} ${absoluteDiffText}</span> ${percentagePill} vs prev. period`;
+            },
+            toggleDataMode() {
+                this.useDummyData = !this.useDummyData;
+                this.fetchData();
+                this.fetchFilterOptions();
+            },
+            fetchData(force=false) {
+                this.loading = true;
+                if (this.useDummyData) {
+                    this.dashboardData = this.generateDummyData();
+                    setTimeout(()=> this.loading = false, 350);
+                } else if (typeof google !== 'undefined' && google.script && google.script.run) {
+                    google.script.run
+                        .withSuccessHandler(data => {
+                            this.dashboardData = data;
+                            this.loading = false;
+                        })
+                        .withFailureHandler(error => {
+                            console.error("Error:", error);
+                            alert("Failed to load dashboard data: " + (error.message||error));
+                            this.loading = false;
+                        })
+                        .getDashboardData(this.selectedPeriod, this.filters, !!force);
+                } else {
+                    // Fallback: show dummy data if not in Apps Script environment
+                    this.dashboardData = this.generateDummyData();
+                    setTimeout(()=> this.loading = false, 350);
+                }
+            },
+                        exportCsv(){
+                                this.exportError='';
+                                if (this.exporting) return;
+                                if (this.useDummyData) { this.exportError = 'Export hanya tersedia di mode Live.'; return; }
+                                if (!(typeof google !== 'undefined' && google.script && google.script.run)) { this.exportError='Environment Apps Script tidak tersedia.'; return; }
+                                this.exporting = true;
+                                google.script.run
+                                .withSuccessHandler(res => {
+                                            try {
+                                    const b64 = res && (res.contentBase64 || res.base64);
+                                    if (!res || !b64 || !res.filename) { throw new Error('Respon tidak valid'); }
+                                    const bytes = atob(b64);
+                                                const arr = new Uint8Array(bytes.length);
+                                                for (let i=0;i<bytes.length;i++) arr[i] = bytes.charCodeAt(i);
+                                                const blob = new Blob([arr], { type: 'text/csv;charset=utf-8;' });
+                                                const url = URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url; a.download = res.filename; document.body.appendChild(a); a.click(); a.remove();
+                                                URL.revokeObjectURL(url);
+                                                this.showExportMenu = false;
+                                            } catch(e){
+                                                console.error(e);
+                                                this.exportError = 'Gagal memproses file: '+ (e.message||e);
+                                            } finally {
+                                                this.exporting = false;
+                                            }
+                                    })
+                                    .withFailureHandler(err => {
+                                            console.error('Export error', err);
+                                            this.exportError = (err && err.message) ? err.message : String(err);
+                                            this.exporting = false;
+                                    })
+                                    .exportDashboardCsv(this.selectedPeriod, this.filters, !!this.exportIncludeRaw);
+                        },
+            generateDummyData() {
+                const prevFactor = 0.8 + Math.random() * 0.4; // 0.8 to 1.2
+                return {
+                    kpiSummary: {
+                        income: 25000000,
+                        expense: 15000000,
+                        net: 10000000,
+                        saving: 5000000,
+                        prev_income: 25000000 * prevFactor,
+                        prev_expense: 15000000 * (2 - prevFactor),
+                        prev_net: (25000000 * prevFactor) - (15000000 * (2 - prevFactor)),
+                        prev_saving: 5000000 * prevFactor,
+                        netWorth: 30000000,
+                        prev_netWorth: 28000000
+                    },
+                    walletStatus: [
+                        { UniqueID: 'w1', Wallet: 'BCA Utama', Owner: 'Bapak', Type: 'Cash & Bank', Balance: 50000000 },
+                        { UniqueID: 'w2', Wallet: 'GoPay', Owner: 'Bapak', Type: 'E-Wallet', Balance:  750000 },
+                        { UniqueID: 'w3', Wallet: 'OVO', Owner: 'Ibu', Type: 'E-Wallet', Balance: 500000 },
+                        { UniqueID: 'w4', Wallet: 'Saham Ajaib', Owner: 'Bapak', Type: 'Investment', Balance: 25000000 },
+                    ],
+                    goalsStatus: [
+                        { UniqueID: 'g2', GoalName: 'Trip to Japan', Status: 'Completed', ProgressPercentage: 100, RemainingAmount: 0 },
+                        { UniqueID: 'g3', GoalName: 'New Car', Status: 'On Track', ProgressPercentage: 40, RemainingAmount: 120000000 },
+                    ],
+                    netFlow: [
+                        { PeriodLabel: '2024-01', Income: 20000000, Expense: 12000000, NetFlowAmount: 8000000 },
+                        { PeriodLabel: '2024-02', Income: 22000000, Expense: 14000000, NetFlowAmount: 8000000 },
+                        { PeriodLabel: '2024-03', Income: 25000000, Expense: 15000000, NetFlowAmount: 10000000 },
+                        { PeriodLabel: '2024-04', Income: 24000000, Expense: 16000000, NetFlowAmount: 8000000 },
+                        { PeriodLabel: '2024-05', Income: 26000000, Expense: 17000000, NetFlowAmount: 9000000 },
+                        { PeriodLabel: '2024-06', Income: 25000000, Expense: 15000000, NetFlowAmount: 10000000 }
+                    ],
+                    budgetStatus: [
+                        { UniqueID: 'b1', Category: 'Food & Beverage', Subcategory: 'All', BudgetAmount: 5000000, ActualExpense: 4000000, RemainingBudget: 1000000, UsagePercentage: 80, Status: 'Warning' },
+                        { UniqueID: 'b2', Category: 'Food & Beverage', Subcategory: 'Groceries', BudgetAmount: 3000000, ActualExpense: 2500000, RemainingBudget: 500000, UsagePercentage: 83.3, Status: 'Warning' },
+                        { UniqueID: 'b3', Category: 'Food & Beverage', Subcategory: 'Eating Out', BudgetAmount: 2000000, ActualExpense: 1500000, RemainingBudget: 500000, UsagePercentage: 75, Status: 'On Track' },
+                        { UniqueID: 'b4', Category: 'Transportation', Subcategory: 'All', BudgetAmount: 1500000, ActualExpense: 1600000, RemainingBudget: -100000, UsagePercentage: 106.7, Status: 'Over' },
+                    ],
+                    liabilitiesUpcoming: [
+                        { UniqueID: 'l1', Type: 'Liabilities', Name: 'Car Loan', Amount: 3500000, DueDate: '05 Sep 2025', Wallet: 'BCA' },
+                        { UniqueID: 'l2', Type: 'Upcoming', Name: 'Internet Bill', Amount: 350000, DueDate: '10 Sep 2025', Wallet: 'GoPay' },
+                        { UniqueID: 'l3', Type: 'Upcoming', Name: 'School Fee', Amount: 2000000, DueDate: '15 Sep 2025', Wallet: 'BCA' },
+                    ],
+                    ratios: [
+                        { UniqueID: 'r1', RatioType: 'Living', TotalExpense: 15000000, PercentageOfTotal: 60 },
+                        { UniqueID: 'r2', RatioType: 'Playing', TotalExpense: 5000000, PercentageOfTotal: 20 },
+                        { UniqueID: 'r3', RatioType: 'Saving', TotalExpense: 5000000, PercentageOfTotal: 20 }
+                    ],
+                    sankeyData: [
+                        ['Bapak', 'Keluarga', 8000000],
+                        ['Bapak', 'Pribadi', 4000000],
+                        ['Ibu', 'Keluarga', 2000000],
+                        ['Ibu', 'Pribadi', 1000000],
+                        ['Anak', 'Pribadi', 500000],
+                    ],
+                    expenseTreeMap: {
+                        total: 28400000, // Updated total
+                        hierarchical: [
+                            {
+                                name: 'Food & Beverage',
+                                value: 4500000,
+                                prev_value: 4000000,
+                                children: [
+                                    { name: 'Groceries', value: 3000000, prev_value: 2500000 },
+                                    { name: 'Eating Out', value: 1500000, prev_value: 1500000 }
+                                ]
+                            },
+                            {
+                                name: 'Transportation',
+                                value: 1900000,
+                                prev_value: 1600000,
+                                children: [
+                                    { name: 'Fuel', value: 1200000, prev_value: 1000000 },
+                                    { name: 'Parking', value: 400000, prev_value: 300000 },
+                                    { name: 'Maintenance', value: 300000, prev_value: 300000 }
+                                ]
+                            },
+                            {
+                                name: 'Housing',
+                                value: 6000000,
+                                prev_value: 6000000,
+                                children: [
+                                    { name: 'Rent', value: 4000000, prev_value: 4000000 },
+                                    { name: 'Utilities', value: 1000000, prev_value: 1000000 },
+                                    { name: 'Internet', value: 500000, prev_value: 500000 },
+                                    { name: 'Maintenance', value: 500000, prev_value: 500000 }
+                                ]
+                            },
+                            {
+                                name: 'Entertainment',
+                                value: 1500000,
+                                prev_value: 2000000,
+                                children: [
+                                    { name: 'Movies', value: 400000, prev_value: 500000 },
+                                    { name: 'Subscription', value: 300000, prev_value: 300000 },
+                                    { name: 'Other', value: 800000, prev_value: 1200000 }
+                                ]
+                            },
+                             {
+                                name: 'Personal Shopping',
+                                value: 14500000,
+                                prev_value: 0, // Example of new category
+                                children: [
+                                    { name: 'Gadgets', value: 12000000, prev_value: 0 },
+                                    { name: 'Apparel', value: 2500000, prev_value: 0 }
+                                ]
+                            }
+                        ],
+                        byCategory: [
+                            { name: 'Food & Beverage', value: 4500000, prev_value: 4000000 },
+                            { name: 'Transportation', value: 1900000, prev_value: 1600000 },
+                            { name: 'Housing', value: 6000000, prev_value: 6000000 },
+                            { name: 'Entertainment', value: 1500000, prev_value: 2000000 },
+                            { name: 'Personal Shopping', value: 14500000, prev_value: 0 }
+                        ],
+                        bySubcategory: [
+                            { name: 'Groceries', value: 3000000, category: 'Food & Beverage', prev_value: 2500000 },
+                            { name: 'Eating Out', value: 1500000, category: 'Food & Beverage', prev_value: 1500000 },
+                            { name: 'Fuel', value: 1200000, category: 'Transportation', prev_value: 1000000 },
+                            { name: 'Parking', value: 400000, category: 'Transportation', prev_value: 300000 },
+                            { name: 'Maintenance', value: 300000, category: 'Transportation', prev_value: 300000 },
+                            { name: 'Rent', value: 4000000, category: 'Housing', prev_value: 4000000 },
+                            { name: 'Utilities', value: 1000000, category: 'Housing', prev_value: 1000000 },
+                            { name: 'Internet', value: 500000, category: 'Housing', prev_value: 500000 },
+                            { name: 'Maintenance', value: 500000, category: 'Housing', prev_value: 500000 },
+                            { name: 'Movies', value: 400000, category: 'Entertainment', prev_value: 500000 },
+                            { name: 'Subscription', value: 300000, category: 'Entertainment', prev_value: 300000 },
+                            { name: 'Other', value: 800000, category: 'Entertainment', prev_value: 1200000 },
+                            { name: 'Gadgets', value: 12000000, category: 'Personal Shopping', prev_value: 0 },
+                            { name: 'Apparel', value: 2500000, category: 'Personal Shopping', prev_value: 0 }
+                        ]
+                    }
+                };
+            },
+            fetchFilterOptions() {
+                if (this.useDummyData) {
+                    this.availableFilters = {
+                        wallets: ['BCA','GoPay','OVO'],
+
+                        walletOwners: ['Bapak','Ibu','Anak'],
+                        expensePurposes: ['Keluarga','Pribadi','Kantor'],
+                        categories: ['Makanan','Transportasi','Hiburan'],
+                        subcategories: ['Restoran','Bensin','Bioskop'],
+                        notes: ['Rutin','Sekali','Urgent']
+                    };
+                } else {
+                    google.script.run
+                        .withSuccessHandler(options => { this.availableFilters = Object.assign({notes:[]}, options||{}); })
+                        .withFailureHandler(err => console.error("Error fetching filter options:", err))
+                        .getFilterOptions();
+                }
+            },
+            applyFilters() { this.showFilterModal = false; this.fetchData(true); },
+            resetFilters() {
+                Object.assign(this.filters, { wallet:'', walletOwner:'', expensePurpose:'', category:'', subcategory:'', note:'', description:'', startDate:'', endDate:'' });
+                this.showFilterModal = false;
+                this.setPeriod('current_month');
+            },
+            setPeriod(p){
+                if (p === 'custom') {
+                    this.selectedPeriod = 'custom';
+                    // Don't fetch data yet, wait for Apply button
+                    return;
+                }
+                if (this.selectedPeriod === p && p !== 'all') return;
+                this.selectedPeriod = p;
+                // Clear custom dates when a preset is chosen
+                this.filters.startDate = '';
+                this.filters.endDate = '';
+                this.showDateFilter = false;
+                this.fetchData(p === 'all');
+            },
+            applyCustomDate() {
+                this.selectedPeriod = 'custom';
+                this.showDateFilter = false;
+                this.fetchData(true); // Force refresh for custom dates
+            },
+            // removed obsolete mini search logic
+            confirmWalletOwner() {
+                // kept for backward compatibility (used in other places)
+                if (this.tempWalletOwner && this.tempWalletOwner.trim() !== '') {
+                    // add to available list if missing
+                    if (!this.availableFilters.walletOwners) this.availableFilters.walletOwners = [];
+                    if (!this.availableFilters.walletOwners.includes(this.tempWalletOwner)) {
+                        this.availableFilters.walletOwners.push(this.tempWalletOwner);
+                    }
+                    this.selectedWalletOwner = this.tempWalletOwner;
+                }
+                this.showWalletOwnerModal = false;
+            },
+
+            // New helper: open modal and prefill temp field
+            openWalletOwnerModal() {
+                this.showWalletOwnerModal = true;
+            },
+
+            // Select owner from modal
+            // simplified AI chat method restored
+            sendAIChat(){
+                this.aiError='';
+                if (this.aiLoading) return;
+                this.aiTriedSubmit = true;
+                if (!this.aiOwner || !this.aiIntent) { this.aiError='Owner & Intent wajib diisi.'; return; }
+                if (!this.userQuestion.trim()) return;
+                const question = this.userQuestion.trim();
+                this.userQuestion='';
+                this.chatHistory.push({ text: question, isUser:true, timestamp: Date.now(), metaTag: this.aiIntent });
+                this.aiLoading = true;
+                if (typeof google !== 'undefined' && google.script && google.script.run) {
+                    google.script.run
+                      .withSuccessHandler(answer => {
+                        this.chatHistory.push({ text: this.formatAIResponse(answer), isUser:false, timestamp: Date.now(), metaTag: 'AI' });
+                        this.aiLoading = false; this.scrollToChatBottom(); this.refreshHistory();
+                      })
+                      .withFailureHandler(err => {
+                        this.chatHistory.push({ text: 'Maaf, terjadi error: '+(err && err.message || err), isUser:false, timestamp: Date.now(), metaTag:'Error' });
+                        this.aiLoading = false; this.scrollToChatBottom();
+                      })
+                      .getAiResponse(question, this.aiOwner, this.aiIntent);
+                } else {
+                    setTimeout(()=>{
+                        this.chatHistory.push({ text: this.formatAIResponse('Contoh jawaban (offline mode).'), isUser:false, timestamp:Date.now(), metaTag:'AI (offline)' });
+                        this.aiLoading = false; this.scrollToChatBottom();
+                    },600);
+                }
+            },
+            formatAIResponse(text) {
+                return marked.parse(text || '');
+            },
+            scrollToChatBottom() {
+                this.$nextTick(()=> {
+                    const win = this.$el.querySelector('.chat-window'); if (win) win.scrollTop = win.scrollHeight;
+                });
+            },
+            applyPrompt(p){ this.userQuestion = p; this.$nextTick(()=> { const inp = this.$el.querySelector('.chat-window + div input'); if (inp) inp.focus(); }); },
+            shufflePrompts(){ if (!this.aiIntent) return; const arr = [...(this.samplePrompts[this.aiIntent]||[])]; for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } this.visiblePrompts = arr.slice(0,5); },
+            onAIContextChange(){ this.shufflePrompts(); },
+            resetAIChat(){ this.chatHistory = []; this.aiError=''; },
+            refreshHistory(){
+                if (!this.aiOwner) { this.historyItems = []; return; }
+                if (typeof google !== 'undefined' && google.script && google.script.run) {
+                    google.script.run
+                      .withSuccessHandler(items => { this.historyItems = items || []; })
+                      .withFailureHandler(err => { console.warn('History load failed', err); })
+                      .getAIQueryHistory(this.aiOwner, this.historyIntentFilter, 50);
+                }
+            },
+            restoreHistory(item){
+                // Replace chat with history Q/A
+                this.chatHistory = [
+                    { text: item.question, isUser:true, timestamp:Date.now(), metaTag:item.intent+' (history)' },
+                    { text: this.formatAIResponse(item.answer), isUser:false, timestamp:Date.now(), metaTag:'AI (history)' }
+                ];
+                this.scrollToChatBottom();
+            },
+            plainText(html){ return String(html||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); },
+            formatTs(d){ try { if(!(d instanceof Date)) d=new Date(d); return Utilities ? Utilities.formatDate(d,'GMT+7','dd MMM HH:mm') : d.toLocaleString(); } catch(e){ return ''; } }
+            // removed session management methods
+        },
+        mounted() {
+            this.fetchData();
+            this.fetchFilterOptions();
+            this.shufflePrompts();
+            this.loadCardOrder();
+            // Initialize default order if none stored
+            if (!this.cardOrder.length) { this.cardOrder = this.cardsMeta.map(c=>c.key); this.persistCardOrder(); }
+            // Click outside to hide handle
+            document.addEventListener('click', this.handleDocumentClick);
+        }
+        ,
+        beforeUnmount(){
+            try { document.removeEventListener('click', this.handleDocumentClick); } catch(e) {}
+        }
+    };
+
+    const app = Vue.createApp({});
+    app.component('dashboard-app', DashboardApp);
+    app.mount('#app');
+    </script>
+    <!-- Service Worker registration -->
+    <script>
+    // Safer SW registration: fetch first and ensure server returns JS MIME (avoid executing HTML as JS)
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async () => {
+            try {
+                // build absolute URL to same document without query string, then append sw=1
+                const baseUrl = window.location.href.split('?')[0];
+                const swUrl = baseUrl + '?sw=1';
+
+                // fetch with same-origin credentials to inspect MIME
+                const resp = await fetch(swUrl, { credentials: 'same-origin' });
+                const contentType = resp.headers.get('content-type') || '';
+
+                if (!contentType.toLowerCase().includes('javascript')) {
+                    console.warn('Service worker skipped — unexpected MIME for', swUrl, contentType);
+                    return;
+                }
+
+                // OK: register normally
+                navigator.serviceWorker.register(swUrl)
+                    .then(reg => console.log('Service worker registered:', reg.scope))
+                    .catch(err => console.warn('Service worker registration failed:', err));
+            } catch (err) {
+                console.warn('Service worker fetch/registration skipped due to error:', err);
+            }
+        });
+    }
+    </script>
+</body>
+</html>
